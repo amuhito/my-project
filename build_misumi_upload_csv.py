@@ -2,63 +2,88 @@ import os
 import configparser
 import pandas as pd
 
-# ========== config ==========
-config = configparser.ConfigParser()
-config.read("config.ini", encoding="utf-8")
 
-OUTPUT_FOLDER = os.path.normpath(config["paths"]["output_folder"])
+import re
 
-# 発注CSV設定（無ければエラー）
-if "orders" not in config:
-    raise KeyError("config.ini に [orders] セクションがありません。order_csv 等を設定してください。")
+def normalize(s: str) -> str:
+    return str(s or "").strip()
 
-order_csv = os.path.normpath(config["orders"]["order_csv"])
-order_encoding = config["orders"].get("order_encoding", "utf-8-sig")
-
-col_order_no   = config["orders"].getint("col_order_no", 0)
-col_juchu_no   = config["orders"].getint("col_juchu_no", 1)
-col_drawing_no = config["orders"].getint("col_drawing_no", 2)
-col_order_code = config["orders"].getint("col_order_code", 3)
-col_qty        = config["orders"].getint("col_qty", 4)
-col_due        = config["orders"].getint("col_due", 6)
-
-# 抽出結果ファイル（process_combine_matches_with_export.py の出力）
-combined_path = os.path.join(OUTPUT_FOLDER, "combine_misumi_types.xlsx")
-
-# マージ設定
-min_code_len = config.getint("merge", "min_code_len", fallback=6)
-
-# ========== helpers ==========
-def is_code_sufficient(code: str) -> bool:
-    if code is None:
-        return False
-    code = str(code).strip()
-    if code == "" or code.lower() == "nan":
-        return False
-    return len(code) >= min_code_len
-
-def parse_drawing_no_from_filebase(filebase: str):
-    """
-    filebase 例: E-25042E-2504200FG8332CZ8301A4  (拡張子なし)
-    命名則: 受注番号/機械番号/種別/図番/原本区分/版数/原紙
-    - 受注番号と機械番号が同一で先頭に2回続く前提。
-    - 末尾は ... + 原本区分(2桁) + 版数(2桁) + 原紙(例:A4=2文字)
-    返り値: 図番（例: FG8332CZ）
-    """
+def detect_machine_no_from_filename(filebase: str, order_no: str):
+    '''
+    Try to detect machine_no if not provided.
+    Expect filebase starts with order_no + <machine_no> ...
+    machine_no pattern: [A-Z]-\d{5} (e.g., E-25042, P-55998, S-25034)
+    '''
     s = filebase
-    n_total = len(s)
-    rep_len = None
-    for n in range(1, n_total // 2):
-        if s[0:n] == s[n:2*n]:
-            rep_len = n
-            break
-    if rep_len is None:
+    if not s.startswith(order_no):
         return None
-    tail = s[2*rep_len+2:]  # 種別(2)の後ろ＝図番+原本区分+版数+原紙
-    if len(tail) < 7:
+    rest = s[len(order_no):]
+    m = re.match(r"([A-Z]-\d{5})", rest)
+    return m.group(1) if m else None
+
+def parse_filebase_misumi(filebase: str, order_no: str, machine_no: str | None):
+    '''
+    Parse filebase (no extension) according to naming convention:
+      受注番号 / 機械番号 / 種別(2) / 図番 / 原本区分(2) / 版数(2) / 原紙(例:A4)
+    Stored without separators, e.g.:
+      E-25042E-2504200FG8332CZ8301A4
+    Returns dict with keys:
+      order_no, machine_no, kind, drawing_no, original_class, revision, paper
+    or None if not parseable.
+    '''
+    s = filebase
+    if not order_no:
         return None
-    drawing = tail[:-6]  # 図番
-    return drawing or None
+    if not s.startswith(order_no):
+        return None
+
+    if machine_no:
+        if not s.startswith(order_no + machine_no):
+            return None
+        pos = len(order_no + machine_no)
+    else:
+        if s.startswith(order_no + order_no):
+            machine_no = order_no
+            pos = len(order_no + order_no)
+        else:
+            detected = detect_machine_no_from_filename(s, order_no)
+            if not detected:
+                return None
+            machine_no = detected
+            pos = len(order_no) + len(machine_no)
+
+    if len(s) < pos + 2 + 6:
+        return None
+
+    kind = s[pos:pos+2]
+    tail = s[pos+2:]
+
+    if len(tail) < 6:
+        return None
+    paper = tail[-2:]
+    rev = tail[-4:-2]
+    original_class = tail[-6:-4]
+    drawing_no = tail[:-6]
+
+    if not drawing_no:
+        return None
+
+    return {
+        "order_no": order_no,
+        "machine_no": machine_no,
+        "kind": kind,
+        "drawing_no": drawing_no,
+        "original_class": original_class,
+        "revision": rev,
+        "paper": paper,
+    }
+
+def load_config():
+    config = configparser.ConfigParser()
+    here = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(here, "config.ini")
+    config.read(config_path, encoding="utf-8")
+    return config, here
 
 def split_candidates(match_str: str):
     if match_str is None:
@@ -76,7 +101,6 @@ def split_candidates(match_str: str):
     return out
 
 def choose_best_candidate(cands):
-    """最低限のヒューリスティック：長いものを優先、次に '-' を含むもの"""
     if not cands:
         return None
     def score(x: str):
@@ -84,113 +108,204 @@ def choose_best_candidate(cands):
         return (len(x), 1 if "-" in x else 0, sum(ch.isdigit() for ch in x))
     return sorted(cands, key=score, reverse=True)[0]
 
-def codes_compatible(order_code: str, cands):
-    oc = str(order_code).strip()
-    if oc == "" or oc.lower() == "nan":
-        return False
-    if oc in cands:
+def is_blank(code: str) -> bool:
+    if code is None:
         return True
-    for c in cands:
-        if oc and oc in c:
-            return True
+    s = str(code).strip()
+    return s == "" or s.lower() == "nan"
+
+def is_likely_truncated(code: str, min_len: int) -> bool:
+    s = str(code or "").strip()
+    if not s:
+        return False
+    if s.endswith(("-", "+", "/", "_")):
+        return True
+    if len(s) < min_len:
+        return True
     return False
 
-# ========== load combined matches ==========
-if not os.path.exists(combined_path):
-    raise FileNotFoundError(f"抽出結果が見つかりません: {combined_path}")
+def can_autofill_prefix(order_code: str, cands: list[str], min_len: int) -> bool:
+    if is_blank(order_code):
+        return False
+    oc = str(order_code).strip()
+    if not is_likely_truncated(oc, min_len):
+        return False
+    hits = [c for c in cands if c.startswith(oc) and len(c) > len(oc)]
+    return len(hits) == 1
 
-df_comb = pd.read_excel(combined_path)
-if not {"File Name", "Match"}.issubset(set(df_comb.columns)):
-    raise ValueError("combine_misumi_types.xlsx に必要列（File Name, Match）がありません。")
+def list_pdfs(input_folder: str):
+    return [fn for fn in os.listdir(input_folder) if fn.lower().endswith(".pdf") and os.path.isfile(os.path.join(input_folder, fn))]
 
-# File Name から図番を作る → 図番ごとに候補を統合
-drawing_to_candidates = {}
+def build_pdf_drawing_set(input_folder: str, order_no: str, machine_no: str | None):
+    pdfs = list_pdfs(input_folder)
+    drawings = set()
+    for fn in pdfs:
+        base = os.path.splitext(os.path.basename(fn))[0]
+        info = parse_filebase_misumi(base, order_no, machine_no)
+        if info:
+            drawings.add(info["drawing_no"])
+    return drawings
 
-for _, row in df_comb.iterrows():
-    fname = str(row["File Name"])
-    match = row["Match"]
-    filebase = os.path.splitext(os.path.basename(fname))[0]
-    drawing = parse_drawing_no_from_filebase(filebase)
-    if not drawing:
-        continue
-    cands = split_candidates(match)
-    drawing_to_candidates.setdefault(drawing, [])
-    drawing_to_candidates[drawing].extend(cands)
+def load_candidates_xlsx(output_folder: str, order_no: str, machine_no: str | None):
+    combined_path = os.path.join(output_folder, "combine_misumi_types.xlsx")
+    if not os.path.exists(combined_path):
+        raise FileNotFoundError(f"抽出結果が見つかりません: {combined_path}")
 
-# 図番ごとに重複排除
-for d, cands in list(drawing_to_candidates.items()):
-    uniq = []
-    seen = set()
-    for c in cands:
-        if c not in seen:
-            uniq.append(c)
-            seen.add(c)
-    drawing_to_candidates[d] = uniq
+    df = pd.read_excel(combined_path)
+    need_cols = {"File Name", "Match"}
+    if not need_cols.issubset(set(df.columns)):
+        raise ValueError("combine_misumi_types.xlsx に必要列（File Name, Match）がありません。")
 
-# ========== load order csv ==========
-df_order = pd.read_csv(order_csv, header=None, encoding=order_encoding, dtype=str)
-max_col = max(col_order_no, col_juchu_no, col_drawing_no, col_order_code, col_qty, col_due)
-if df_order.shape[1] <= max_col:
-    for _ in range(max_col + 1 - df_order.shape[1]):
-        df_order[df_order.shape[1]] = ""
+    drawing_to_candidates = {}
+    for _, row in df.iterrows():
+        fname = str(row["File Name"])
+        match = row["Match"]
+        filebase = os.path.splitext(os.path.basename(fname))[0]
+        info = parse_filebase_misumi(filebase, order_no, machine_no)
+        if not info:
+            continue
+        drawing = info["drawing_no"]
+        cands = split_candidates(match)
+        if not cands:
+            continue
+        drawing_to_candidates.setdefault(drawing, [])
+        drawing_to_candidates[drawing].extend(cands)
 
-rows_upload = []
-rows_check = []
+    for d, cands in list(drawing_to_candidates.items()):
+        uniq = []
+        seen = set()
+        for c in cands:
+            if c not in seen:
+                uniq.append(c)
+                seen.add(c)
+        drawing_to_candidates[d] = uniq
+    return drawing_to_candidates
 
-for _, r in df_order.iterrows():
-    order_no = (r.iloc[col_order_no] or "").strip()
-    juchu_no = (r.iloc[col_juchu_no] or "").strip()
-    drawing_no = (r.iloc[col_drawing_no] or "").strip()
-    order_code = (r.iloc[col_order_code] or "").strip()
-    qty = (r.iloc[col_qty] or "").strip()
-    due = (r.iloc[col_due] or "").strip()
+def main():
+    config, _ = load_config()
 
-    cands = drawing_to_candidates.get(drawing_no, [])
-    best = choose_best_candidate(cands)
+    output_folder = os.path.normpath(config["paths"]["output_folder"])
+    input_folder = os.path.normpath(config["paths"]["input_folder"])
+    os.makedirs(output_folder, exist_ok=True)
 
-    status = ""
-    final_code = order_code
+    mode = config.get("run", "mode", fallback="pre").strip().lower()
+    order_no = config.get("run", "order_no", fallback="").strip()
+    machine_no = config.get("run", "machine_no", fallback="").strip() or None
 
-    if is_code_sufficient(order_code):
-        if cands:
-            status = "OK" if codes_compatible(order_code, cands) else "CONFLICT"
-        else:
-            status = "OK_NO_DXF_CANDIDATE"
+    if not order_no:
+        order_no = input("受注番号を入力してください（例: E-25049）: ").strip()
+    if machine_no is None:
+        tmp = input("機械番号を入力してください（任意、例: P-55998。空でスキップ）: ").strip()
+        machine_no = tmp or None
+
+    min_code_len = config.getint("merge", "min_code_len", fallback=6)
+
+    drawing_to_candidates = load_candidates_xlsx(output_folder, order_no, machine_no)
+    drawings_with_pdf = build_pdf_drawing_set(input_folder, order_no, machine_no)
+
+    if mode == "order":
+        if "orders" not in config:
+            raise KeyError("ORDERモードでは config.ini に [orders] が必要です（order_csv, order_sep, col_*）")
+
+        order_csv = os.path.normpath(config["orders"]["order_csv"])
+        order_encoding = config["orders"].get("order_encoding", "utf-8-sig")
+        order_sep = config["orders"].get("order_sep", "\t")
+
+        col_order_no   = config["orders"].getint("col_order_no", 0)
+        col_juchu_no   = config["orders"].getint("col_juchu_no", 1)
+        col_drawing_no = config["orders"].getint("col_drawing_no", 2)
+        col_order_code = config["orders"].getint("col_order_code", 3)
+
+        df_order = pd.read_csv(order_csv, header=None, encoding=order_encoding, dtype=str, sep=order_sep)
+
+        max_col = max(col_order_no, col_juchu_no, col_drawing_no, col_order_code)
+        if df_order.shape[1] <= max_col:
+            raise ValueError(f"発注CSVの列数が不足しています。必要={max_col+1}列, actual={df_order.shape[1]}列")
+
+        rows = []
+        for idx, row in df_order.iterrows():
+            drawing = normalize(row.iloc[col_drawing_no])
+            order_code = normalize(row.iloc[col_order_code])
+            cands = drawing_to_candidates.get(drawing, [])
+            has_pdf = drawing in drawings_with_pdf
+
+            status = "OK"
+            proposed = ""
+
+            if has_pdf:
+                if is_blank(order_code):
+                    if len(cands) == 1:
+                        status = "AUTO"
+                        proposed = cands[0]
+                    elif len(cands) == 0:
+                        status = "MISSING"
+                    else:
+                        status = "REVIEW"
+                else:
+                    if order_code in cands:
+                        status = "OK"
+                    else:
+                        if can_autofill_prefix(order_code, cands, min_code_len):
+                            oc = str(order_code).strip()
+                            proposed = [c for c in cands if c.startswith(oc) and len(c) > len(oc)][0]
+                            status = "AUTO"
+                        else:
+                            status = "REVIEW" if len(cands) > 0 else "OK"
+            else:
+                if is_blank(order_code) and len(cands) == 0:
+                    status = "MISSING_NO_PDF"
+                elif is_blank(order_code):
+                    status = "REVIEW_NO_PDF"
+                else:
+                    status = "OK"
+
+            rows.append({
+                "row_id": idx,
+                "order_no": normalize(row.iloc[col_order_no]),
+                "juchu_no": normalize(row.iloc[col_juchu_no]),
+                "drawing_no": drawing,
+                "order_code": order_code,
+                "has_pdf": has_pdf,
+                "candidates": "|".join(cands),
+                "status": status,
+                "proposed_code": proposed,
+            })
+
+        df_check = pd.DataFrame(rows)
+        check_path = os.path.join(output_folder, "check.csv")
+        df_check.to_csv(check_path, index=False, encoding="utf-8-sig")
+
+        df_upload = df_order.copy()
+        for r in rows:
+            if r["status"] == "AUTO" and r["proposed_code"]:
+                df_upload.iat[r["row_id"], col_order_code] = r["proposed_code"]
+
+        upload_path = os.path.join(output_folder, "upload.csv")
+        df_upload.to_csv(upload_path, index=False, header=False, encoding="utf-8-sig")
+
+        print(f"Saved: {check_path}")
+        print(f"Saved: {upload_path}")
+        print("AUTO件数:", int((df_check["status"] == "AUTO").sum()))
+        print("REVIEW件数:", int(df_check["status"].astype(str).str.startswith("REVIEW").sum()))
+        print("MISSING件数:", int(df_check["status"].astype(str).str.startswith("MISSING").sum()))
+
     else:
-        if best:
-            final_code = best
-            status = "AUTO_FILLED"
-        else:
-            status = "MISSING"
+        out_rows = []
+        for drawing, cands in sorted(drawing_to_candidates.items(), key=lambda x: x[0]):
+            best = choose_best_candidate(cands)
+            has_pdf = drawing in drawings_with_pdf
+            status = "AUTO" if has_pdf and len(cands) == 1 else ("REVIEW" if has_pdf and len(cands) > 1 else "NO_PDF")
+            out_rows.append({
+                "drawing_no": drawing,
+                "has_pdf": has_pdf,
+                "candidates": "|".join(cands),
+                "best_candidate": best or "",
+                "status": status,
+            })
+        df_sum = pd.DataFrame(out_rows)
+        sum_path = os.path.join(output_folder, "candidates_summary.csv")
+        df_sum.to_csv(sum_path, index=False, encoding="utf-8-sig")
+        print(f"Saved: {sum_path}")
 
-    rows_upload.append({
-        "注文No": order_no,
-        "受注番号": juchu_no,
-        "図番": drawing_no,
-        "型式": final_code,
-        "数量": qty,
-        "納期": due,
-    })
-
-    rows_check.append({
-        "注文No": order_no,
-        "受注番号": juchu_no,
-        "図番": drawing_no,
-        "型式_元": order_code,
-        "型式_確定": final_code,
-        "数量": qty,
-        "納期": due,
-        "status": status,
-        "候補一覧": " ".join(cands),
-        "採用候補": best or "",
-    })
-
-upload_path = os.path.join(OUTPUT_FOLDER, "misumi_upload.csv")
-check_path  = os.path.join(OUTPUT_FOLDER, "misumi_upload_check.csv")
-
-pd.DataFrame(rows_upload).to_csv(upload_path, index=False, encoding="utf-8-sig")
-pd.DataFrame(rows_check).to_csv(check_path, index=False, encoding="utf-8-sig")
-
-print("Generated:")
-print(" -", upload_path)
-print(" -", check_path)
+if __name__ == "__main__":
+    main()
