@@ -1,6 +1,7 @@
 import os
 import configparser
 import pandas as pd
+import logging
 
 
 import re
@@ -124,17 +125,11 @@ def is_likely_truncated(code: str, min_len: int) -> bool:
         return True
     return False
 
-def can_autofill_prefix(order_code: str, cands: list[str], min_len: int) -> bool:
-    if is_blank(order_code):
-        return False
-    oc = str(order_code).strip()
-    if not is_likely_truncated(oc, min_len):
-        return False
-    hits = [c for c in cands if c.startswith(oc) and len(c) > len(oc)]
-    return len(hits) == 1
-
 def list_pdfs(input_folder: str):
     return [fn for fn in os.listdir(input_folder) if fn.lower().endswith(".pdf") and os.path.isfile(os.path.join(input_folder, fn))]
+
+def list_dxfs(input_folder: str):
+    return [fn for fn in os.listdir(input_folder) if fn.lower().endswith(".dxf") and os.path.isfile(os.path.join(input_folder, fn))]
 
 def build_pdf_drawing_set(input_folder: str, order_no: str, machine_no: str | None):
     pdfs = list_pdfs(input_folder)
@@ -145,6 +140,43 @@ def build_pdf_drawing_set(input_folder: str, order_no: str, machine_no: str | No
         if info:
             drawings.add(info["drawing_no"])
     return drawings
+
+def build_dxf_drawing_set(input_folder: str, order_no: str, machine_no: str | None):
+    dxfs = list_dxfs(input_folder)
+    drawings = set()
+    for fn in dxfs:
+        base = os.path.splitext(os.path.basename(fn))[0]
+        info = parse_filebase_misumi(base, order_no, machine_no)
+        if info:
+            drawings.add(info["drawing_no"])
+    return drawings
+
+def resolve_order_row(order_code: str, cands: list[str], has_dxf: bool):
+    """
+    AUTO/REVIEW/ERROR を明確に分離して判定する。
+    AUTO は「一意候補のみ」。
+    短縮型式補完（prefix補完）は DXF が存在する場合のみ実施する。
+    """
+    if is_blank(order_code):
+        if len(cands) == 1:
+            return "AUTO", "BLANK_ORDER_CODE_SINGLE_CANDIDATE", cands[0]
+        if len(cands) == 0:
+            return "REVIEW", "BLANK_ORDER_CODE_NO_CANDIDATE", ""
+        return "REVIEW", "BLANK_ORDER_CODE_MULTI_CANDIDATE", ""
+
+    if order_code in cands:
+        return "REVIEW", "ORDER_CODE_MATCHED", ""
+
+    if has_dxf:
+        prefix_hits = [c for c in cands if c.startswith(order_code) and len(c) > len(order_code)]
+        if len(prefix_hits) == 1:
+            return "AUTO", "PREFIX_COMPLETION_SINGLE_CANDIDATE", prefix_hits[0]
+        if len(prefix_hits) >= 2:
+            return "REVIEW", "PREFIX_COMPLETION_MULTI_CANDIDATE", ""
+
+    if len(cands) == 0:
+        return "REVIEW", "ORDER_CODE_MISMATCH_NO_CANDIDATE", ""
+    return "REVIEW", "ORDER_CODE_MISMATCH_MULTI_OR_DIFFERENT", ""
 
 def load_candidates_xlsx(output_folder: str, order_no: str, machine_no: str | None):
     combined_path = os.path.join(output_folder, "combine_misumi_types.xlsx")
@@ -182,6 +214,7 @@ def load_candidates_xlsx(output_folder: str, order_no: str, machine_no: str | No
     return drawing_to_candidates
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     config, _ = load_config()
 
     output_folder = os.path.normpath(config["paths"]["output_folder"])
@@ -198,10 +231,9 @@ def main():
         tmp = input("機械番号を入力してください（任意、例: P-55998。空でスキップ）: ").strip()
         machine_no = tmp or None
 
-    min_code_len = config.getint("merge", "min_code_len", fallback=6)
-
     drawing_to_candidates = load_candidates_xlsx(output_folder, order_no, machine_no)
     drawings_with_pdf = build_pdf_drawing_set(input_folder, order_no, machine_no)
+    drawings_with_dxf = build_dxf_drawing_set(input_folder, order_no, machine_no)
 
     if mode == "order":
         if "orders" not in config:
@@ -228,48 +260,30 @@ def main():
             order_code = normalize(row.iloc[col_order_code])
             cands = drawing_to_candidates.get(drawing, [])
             has_pdf = drawing in drawings_with_pdf
+            has_dxf = drawing in drawings_with_dxf
 
-            status = "OK"
-            proposed = ""
-
-            if has_pdf:
-                if is_blank(order_code):
-                    if len(cands) == 1:
-                        status = "AUTO"
-                        proposed = cands[0]
-                    elif len(cands) == 0:
-                        status = "MISSING"
-                    else:
-                        status = "REVIEW"
-                else:
-                    if order_code in cands:
-                        status = "OK"
-                    else:
-                        if can_autofill_prefix(order_code, cands, min_code_len):
-                            oc = str(order_code).strip()
-                            proposed = [c for c in cands if c.startswith(oc) and len(c) > len(oc)][0]
-                            status = "AUTO"
-                        else:
-                            status = "REVIEW" if len(cands) > 0 else "OK"
+            if not drawing:
+                status, reason_code, proposed = "ERROR", "DRAWING_NO_BLANK", ""
             else:
-                if is_blank(order_code) and len(cands) == 0:
-                    status = "MISSING_NO_PDF"
-                elif is_blank(order_code):
-                    status = "REVIEW_NO_PDF"
-                else:
-                    status = "OK"
+                status, reason_code, proposed = resolve_order_row(order_code, cands, has_dxf)
 
             rows.append({
-                "row_id": idx,
+                "row_index": idx,
                 "order_no": normalize(row.iloc[col_order_no]),
                 "juchu_no": normalize(row.iloc[col_juchu_no]),
                 "drawing_no": drawing,
                 "order_code": order_code,
                 "has_pdf": has_pdf,
+                "has_dxf": has_dxf,
                 "candidates": "|".join(cands),
                 "status": status,
+                "reason_code": reason_code,
                 "proposed_code": proposed,
             })
+            logging.info(
+                "row_index=%s drawing_no=%s status=%s reason_code=%s has_pdf=%s has_dxf=%s candidates=%s proposed=%s",
+                idx, drawing, status, reason_code, has_pdf, has_dxf, "|".join(cands), proposed
+            )
 
         df_check = pd.DataFrame(rows)
         check_path = os.path.join(output_folder, "check.csv")
@@ -278,7 +292,7 @@ def main():
         df_upload = df_order.copy()
         for r in rows:
             if r["status"] == "AUTO" and r["proposed_code"]:
-                df_upload.iat[r["row_id"], col_order_code] = r["proposed_code"]
+                df_upload.iat[r["row_index"], col_order_code] = r["proposed_code"]
 
         upload_path = os.path.join(output_folder, "upload.csv")
         df_upload.to_csv(upload_path, index=False, header=False, encoding="utf-8-sig")
@@ -286,21 +300,27 @@ def main():
         print(f"Saved: {check_path}")
         print(f"Saved: {upload_path}")
         print("AUTO件数:", int((df_check["status"] == "AUTO").sum()))
-        print("REVIEW件数:", int(df_check["status"].astype(str).str.startswith("REVIEW").sum()))
-        print("MISSING件数:", int(df_check["status"].astype(str).str.startswith("MISSING").sum()))
+        print("REVIEW件数:", int((df_check["status"] == "REVIEW").sum()))
+        print("ERROR件数:", int((df_check["status"] == "ERROR").sum()))
 
     else:
         out_rows = []
         for drawing, cands in sorted(drawing_to_candidates.items(), key=lambda x: x[0]):
             best = choose_best_candidate(cands)
             has_pdf = drawing in drawings_with_pdf
-            status = "AUTO" if has_pdf and len(cands) == 1 else ("REVIEW" if has_pdf and len(cands) > 1 else "NO_PDF")
+            status = "AUTO" if has_pdf and len(cands) == 1 else "REVIEW"
+            reason_code = (
+                "SINGLE_CANDIDATE_WITH_PDF" if has_pdf and len(cands) == 1
+                else "MULTI_CANDIDATE_WITH_PDF" if has_pdf and len(cands) > 1
+                else "NO_PDF_OR_NO_CANDIDATE"
+            )
             out_rows.append({
                 "drawing_no": drawing,
                 "has_pdf": has_pdf,
                 "candidates": "|".join(cands),
                 "best_candidate": best or "",
                 "status": status,
+                "reason_code": reason_code,
             })
         df_sum = pd.DataFrame(out_rows)
         sum_path = os.path.join(output_folder, "candidates_summary.csv")
