@@ -125,6 +125,17 @@ def is_likely_truncated(code: str, min_len: int) -> bool:
         return True
     return False
 
+def normalize_code_trailing_sep(code: str) -> str:
+    """比較用: 末尾の区切り記号のみ除去する（例: E-25085_ -> E-25085）。"""
+    return normalize(code).rstrip("-+/_")
+
+def normalize_order_no_trailing_sep(s: str) -> str:
+    """受注番号比較用: 末尾の区切り記号（- + / _）のみ除去する。"""
+    return normalize(s).rstrip("-+/_")
+
+def is_same_order_no(cli_order_no: str, csv_order_no: str) -> bool:
+    return normalize_order_no_trailing_sep(cli_order_no) == normalize_order_no_trailing_sep(csv_order_no)
+
 def list_pdfs(input_folder: str):
     return [fn for fn in os.listdir(input_folder) if fn.lower().endswith(".pdf") and os.path.isfile(os.path.join(input_folder, fn))]
 
@@ -164,11 +175,22 @@ def resolve_order_row(order_code: str, cands: list[str], has_dxf: bool):
             return "REVIEW", "BLANK_ORDER_CODE_NO_CANDIDATE", ""
         return "REVIEW", "BLANK_ORDER_CODE_MULTI_CANDIDATE", ""
 
-    if order_code in cands:
+    normalized_order_code = normalize_code_trailing_sep(order_code)
+    normalized_cands = [normalize_code_trailing_sep(c) for c in cands]
+
+    # 末尾区切り記号だけ違う場合は一致扱い（E-25085 と E-25085_ など）
+    if normalized_order_code and normalized_order_code in normalized_cands:
         return "REVIEW", "ORDER_CODE_MATCHED", ""
 
     if has_dxf:
-        prefix_hits = [c for c in cands if c.startswith(order_code) and len(c) > len(order_code)]
+        # prefix補完は「区切り記号で続く候補」のみ対象にする
+        # 例: E-25085 -> E-25085_XXXX は対象、E-25085VF8399+Z は対象外
+        prefix_hits = [
+            c for c in cands
+            if normalize(c).startswith(order_code)
+            and len(normalize(c)) > len(order_code)
+            and normalize(c)[len(order_code):len(order_code)+1] in "-+/_"
+        ]
         if len(prefix_hits) == 1:
             return "AUTO", "PREFIX_COMPLETION_SINGLE_CANDIDATE", prefix_hits[0]
         if len(prefix_hits) >= 2:
@@ -255,7 +277,16 @@ def main():
             raise ValueError(f"発注CSVの列数が不足しています。必要={max_col+1}列, actual={df_order.shape[1]}列")
 
         rows = []
+        matched_row_count = 0
         for idx, row in df_order.iterrows():
+            csv_order_no = normalize(row.iloc[col_order_no])
+            csv_juchu_no = normalize(row.iloc[col_juchu_no])
+
+            # 受注番号比較は末尾区切り記号のみ同一視する（E-25085 == E-25085_）
+            if not (is_same_order_no(order_no, csv_order_no) or is_same_order_no(order_no, csv_juchu_no)):
+                continue
+
+            matched_row_count += 1
             drawing = normalize(row.iloc[col_drawing_no])
             order_code = normalize(row.iloc[col_order_code])
             cands = drawing_to_candidates.get(drawing, [])
@@ -299,6 +330,7 @@ def main():
 
         print(f"Saved: {check_path}")
         print(f"Saved: {upload_path}")
+        print("対象受注行数:", matched_row_count)
         print("AUTO件数:", int((df_check["status"] == "AUTO").sum()))
         print("REVIEW件数:", int((df_check["status"] == "REVIEW").sum()))
         print("ERROR件数:", int((df_check["status"] == "ERROR").sum()))
