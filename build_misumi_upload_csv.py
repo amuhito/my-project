@@ -2,12 +2,15 @@ import os
 import configparser
 import pandas as pd
 import logging
+import unicodedata
 
 
 import re
 
 def normalize(s: str) -> str:
-    return str(s or "").strip()
+    s = str(s or "")
+    s = unicodedata.normalize("NFKC", s)
+    return s.strip()
 
 def detect_machine_no_from_filename(filebase: str, order_no: str):
     '''
