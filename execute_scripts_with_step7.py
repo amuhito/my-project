@@ -2,18 +2,26 @@ import subprocess
 import os
 import logging
 import configparser
+import sys
 from datetime import datetime
 
-# INIコンフィグファイルを読み込む
-config = configparser.ConfigParser()
-config.read("config.ini", encoding="utf-8")
+
+def load_config():
+    config = configparser.ConfigParser()
+    here = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(here, "config.ini")
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"config.ini not found: {config_path}")
+    config.read(config_path, encoding="utf-8")
+    return config, here
+
 
 def execute_script(script_path: str):
     start_time = datetime.now()
     normalized_path = os.path.normpath(script_path)
     logging.info(f"Starting execution of {normalized_path} at {start_time}")
     try:
-        subprocess.run(["python", normalized_path], check=True)
+        subprocess.run([sys.executable, normalized_path], check=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"Error executing {normalized_path}: {e}")
         raise
@@ -22,9 +30,8 @@ def execute_script(script_path: str):
         logging.info(f"Finished execution of {normalized_path} at {end_time}")
         logging.info(f"Execution time: {end_time - start_time}")
 
-def load_scripts_to_execute():
-    # [scripts] の script_1, script_2, ... を番号順に自動収集する。
-    # 既存のscript_1〜6に加えて、script_7 以降も追加できる。
+
+def load_scripts_to_execute(config):
     if "scripts" not in config:
         raise KeyError("config.ini に [scripts] セクションがありません。")
     items = []
@@ -39,16 +46,20 @@ def load_scripts_to_execute():
     items.sort(key=lambda x: x[0])
     return [v for _, v in items]
 
-if __name__ == "__main__":
+
+def main():
     logging.basicConfig(filename="script_execution.log", level=logging.INFO)
 
-    script_folder = os.path.normpath(config["paths"]["script_folder"])
-    scripts_to_execute = load_scripts_to_execute()
+    config, here = load_config()
 
-    for script in scripts_to_execute:
-        script_path = os.path.join(script_folder, script)
-        execute_script(script_path)
+    script_folder = os.path.normpath(config.get("paths", "script_folder", fallback=here))
+    if not os.path.isdir(script_folder):
+        logging.warning(f"script_folder not found; fallback to runner directory: {script_folder}")
+        script_folder = here
 
-        # copy_files_to_input.py の後に一時停止（手作業のコピー完了待ち）
-        if "scripts" in config and script == config["scripts"].get("script_2", "").strip():
-            input("copy_files_to_input.py の操作が完了したら Enter を押してください（次へ進みます）...")
+    for script in load_scripts_to_execute(config):
+        execute_script(os.path.join(script_folder, script))
+
+
+if __name__ == "__main__":
+    main()
