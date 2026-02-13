@@ -116,8 +116,13 @@ def read_ordered_drawings(config):
     if df.shape[1] <= col_drawing_no:
         raise ValueError(f"発注CSVの列数が不足しています。col_drawing_no={col_drawing_no}, actual_cols={df.shape[1]}")
 
-    drawings = [normalize(v) for v in df.iloc[:, col_drawing_no].tolist()]
-    return [d for d in drawings if d]
+    ordered_rows = []
+    for row_index, value in enumerate(df.iloc[:, col_drawing_no].tolist()):
+        ordered_rows.append({
+            "row_index": row_index,
+            "drawing_no": normalize(value),
+        })
+    return ordered_rows
 
 def combine_pdfs_order_mode(config, input_folder, output_folder, order_no, machine_no):
     os.makedirs(output_folder, exist_ok=True)
@@ -128,7 +133,7 @@ def combine_pdfs_order_mode(config, input_folder, output_folder, order_no, machi
         logging.warning("input_folder にPDFが見つかりません。")
         return
 
-    drawings = read_ordered_drawings(config)
+    ordered_rows = read_ordered_drawings(config)
 
     writer = PdfWriter()
     added_files = set()
@@ -136,9 +141,16 @@ def combine_pdfs_order_mode(config, input_folder, output_folder, order_no, machi
     missing = []
     multi = []
 
-    for d in drawings:
+    for item in ordered_rows:
+        row_index = item["row_index"]
+        d = item["drawing_no"]
+        if not d:
+            logging.warning(f"row_index={row_index}: drawing_no が空のためスキップ")
+            continue
+
         hits = match_pdfs_for_drawing(pdf_names, d, order_no, machine_no)
         if not hits:
+            logging.warning(f"row_index={row_index} drawing_no={d}: 対応PDFなし（継続）")
             missing.append(d)
             continue
         if len(hits) >= 2:
@@ -148,7 +160,7 @@ def combine_pdfs_order_mode(config, input_folder, output_folder, order_no, machi
             if fn in added_files:
                 continue
             path = os.path.join(input_folder, fn)
-            logging.info(f"[{d}] add: {fn}")
+            logging.info(f"row_index={row_index} drawing_no={d} add: {fn}")
             with open(path, "rb") as f:
                 reader = PdfReader(f)
                 for page in reader.pages:
