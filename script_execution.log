@@ -1,7 +1,0 @@
-INFO:root:Starting execution of C:\Users\A000594001\python_scripts\misumi_types\scripts\clean_input_folder.py at 2026-02-12 20:02:05.042671
-INFO:root:Finished execution of C:\Users\A000594001\python_scripts\misumi_types\scripts\clean_input_folder.py at 2026-02-12 20:02:05.401750
-INFO:root:Execution time: 0:00:00.359079
-INFO:root:Starting execution of C:\Users\A000594001\python_scripts\misumi_types\scripts\copy_files_to_input_patched2.py at 2026-02-12 20:02:05.401750
-ERROR:root:Error executing C:\Users\A000594001\python_scripts\misumi_types\scripts\copy_files_to_input_patched2.py: Command '['C:\\Users\\A000594001\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\python.exe', 'C:\\Users\\A000594001\\python_scripts\\misumi_types\\scripts\\copy_files_to_input_patched2.py']' returned non-zero exit status 2.
-INFO:root:Finished execution of C:\Users\A000594001\python_scripts\misumi_types\scripts\copy_files_to_input_patched2.py at 2026-02-12 20:02:05.527605
-INFO:root:Execution time: 0:00:00.125855

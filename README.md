@@ -1,25 +1,86 @@
-# misumi_types scripts
+# Project Overview
 
-## 実行エントリポイント
-- **唯一の実行入口**: `execute_scripts_with_step7.py`
-- 実行時は `config.ini` の `[scripts]` を上から順に読み、`script_1`, `script_2`, ... を実行します。
+このリポジトリには、既存の `misumi_types` スクリプト群と、ローカル動作する納期確認向けカンバン POC が含まれています。用途ごとにディレクトリを分け、ルートには全体の案内だけを置く構成です。
 
-## 実行手順（Windows想定）
-1. `config.ini` の `[paths]` と `[scripts]` を確認・更新する。
-2. 必要な依存（既存運用のもの）を準備する。
-3. 以下を実行する。
-   ```bat
-   python execute_scripts_with_step7.py
-   ```
-4. ログは `script_execution.log` を確認する。
+## ディレクトリ構成
 
-## フォルダ構成（最小）
-- `execute_scripts_with_step7.py`: 実行制御（エントリポイント）
-- `config.ini`: パス・実行順・モード設定
-- `*.py`: 各処理スクリプト本体
-- `archive/`: 旧 `*_patched*.py` の退避先（直接実行しない）
+- `frontend`
+  React + TypeScript + Vite のフロントエンド
+- `backend`
+  FastAPI + SQLite のバックエンド
+- `tools/misumi_types`
+  既存の Python / PowerShell スクリプト、設定、ログ、退避ファイル
 
-## 運用ルール（patched増殖防止）
-- `*_patched*.py` は新規作成しない。
-- 修正は**元ファイルを直接更新**する。
-- 一時退避が必要な場合のみ `archive/` に移動し、`config.ini` の `[scripts]` から参照しない。
+## 納期確認カンバン POC
+
+主な機能:
+
+- 日本語 UI のカンバン表示
+- グループ: `未対応` / `設計確認中` / `発注中` / `サプライヤー確認中` / `１次対応完了`
+- 案件専用フィールド
+  - 日付
+  - 受注番号
+  - ユーザー様
+  - ステータス
+  - 希望納期
+  - 確認先
+  - 回答納期
+  - 最短の発送日
+  - 備考（理由）
+  - 履歴
+- カンバン / テーブル切り替え
+- フリーワード検索
+- ステータス絞り込み
+- 回答納期ベースの絞り込み
+- カードのドラッグ＆ドロップ移動
+- コメント、チェックリスト、アクティビティ
+- SQLite 永続化と初期シードデータ
+
+起動手順:
+
+1. バックエンド
+
+```bash
+cd backend
+python -m venv .venv
+```
+
+Windows:
+
+```bash
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+macOS / Linux:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+2. フロントエンド
+
+PowerShell で実行ポリシーに引っかかる場合は `npm` ではなく `npm.cmd` を使います。
+
+```bash
+cd frontend
+npm.cmd install
+npm.cmd run dev
+```
+
+- API: `http://127.0.0.1:8000`
+- Frontend: `http://127.0.0.1:5173`
+
+使い方:
+
+- 各列下部の入力欄から案件を追加できます
+- 上部の検索バーで `受注番号`、`ユーザー様`、`確認先`、`備考` を検索できます
+- `カンバン` と `テーブル` を切り替えて閲覧できます
+- 案件カードやテーブル行をクリックすると詳細モーダルを開けます
+- 詳細モーダルでは案件項目を編集して保存できます
+
+## misumi_types スクリプト
+
+既存スクリプト群は [tools/misumi_types/README.md](C:\Users\A000594001\my-project\tools\misumi_types\README.md) にまとめています。設定ファイル、ログ、`archive` 内の退避版も同じ配下に集約しています。
