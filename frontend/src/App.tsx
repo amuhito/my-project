@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { createCard, fetchBoard, fetchCard, moveCard } from "./api";
+import { archiveCard, createCard, fetchBoard, fetchCard, moveCard, unarchiveCard } from "./api";
 import { CardModal } from "./components/CardModal";
-import type { BoardList, BoardResponse, CardDetail } from "./types";
+import type { BoardList, BoardResponse, CardDetail, CardSummary } from "./types";
 
 type DragState = {
   cardId: number;
@@ -10,6 +10,27 @@ type DragState = {
 
 type ViewMode = "kanban" | "table";
 type UrgencyFilter = "all" | "overdue" | "with-response-date";
+type TableSortMode = "default" | "requested-due" | "response-due" | "order-no";
+
+type ContextMenuState = {
+  x: number;
+  y: number;
+  card: CardSummary;
+};
+
+const ARCHIVABLE_STATUS = "１次対応完了";
+
+function todayText() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function canArchiveCard(card: Pick<CardSummary, "archived" | "status" | "requested_due_date">) {
+  if (card.archived) {
+    return true;
+  }
+
+  return card.status === ARCHIVABLE_STATUS && !!card.requested_due_date && card.requested_due_date < todayText();
+}
 
 function App() {
   const [board, setBoard] = useState<BoardResponse | null>(null);
@@ -24,9 +45,18 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
+  const [tableSort, setTableSort] = useState<TableSortMode>("default");
+  const [showArchived, setShowArchived] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
   useEffect(() => {
     void loadBoard();
+  }, [showArchived]);
+
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener("click", closeMenu);
+    return () => window.removeEventListener("click", closeMenu);
   }, []);
 
   const statuses = useMemo(() => board?.lists.map((list) => list.title) ?? [], [board]);
@@ -84,22 +114,69 @@ function App() {
     }));
   }, [board, searchQuery, statusFilter, urgencyFilter]);
 
-  const flatCards = useMemo(
-    () =>
-      filteredLists.flatMap((list) =>
-        list.cards.map((card) => ({
-          ...card,
-          listId: list.id,
-        })),
-      ),
-    [filteredLists],
-  );
+  const flatCards = useMemo(() => {
+    const cards = filteredLists.flatMap((list) =>
+      list.cards.map((card, index) => ({
+        ...card,
+        listId: list.id,
+        listTitle: list.title,
+        originalIndex: index,
+        listPosition: list.position,
+      })),
+    );
+
+    if (tableSort === "default") {
+      return cards;
+    }
+
+    const compareDate = (left: string | null, right: string | null) => {
+      if (left && right) {
+        return left.localeCompare(right);
+      }
+      if (left) {
+        return -1;
+      }
+      if (right) {
+        return 1;
+      }
+      return 0;
+    };
+
+    const compareFallback = (
+      left: { listPosition: number; originalIndex: number },
+      right: { listPosition: number; originalIndex: number },
+    ) => {
+      if (left.listPosition !== right.listPosition) {
+        return left.listPosition - right.listPosition;
+      }
+      return left.originalIndex - right.originalIndex;
+    };
+
+    return [...cards].sort((left, right) => {
+      if (tableSort === "requested-due") {
+        const result = compareDate(left.requested_due_date, right.requested_due_date);
+        return result !== 0 ? result : compareFallback(left, right);
+      }
+
+      if (tableSort === "response-due") {
+        const result = compareDate(left.response_due_date, right.response_due_date);
+        return result !== 0 ? result : compareFallback(left, right);
+      }
+
+      const orderResult = (left.project_no || "").localeCompare(
+        right.project_no || "",
+        "ja",
+        { numeric: true },
+      );
+      return orderResult !== 0 ? orderResult : compareFallback(left, right);
+    });
+  }, [filteredLists, tableSort]);
 
   const loadBoard = async () => {
     try {
       setLoading(true);
       setError("");
-      const data = await fetchBoard();
+      const data = await fetchBoard(showArchived);
       setBoard(data);
     } catch {
       setError("ボードの取得に失敗しました。バックエンドが起動しているか確認してください。");
@@ -144,8 +221,38 @@ function App() {
 
   const handleCardSaved = async (updatedCard: CardDetail) => {
     setActiveCard(updatedCard);
-    const updatedBoard = await fetchBoard();
+    const updatedBoard = await fetchBoard(showArchived);
     setBoard(updatedBoard);
+  };
+
+  const handleArchiveToggle = async (cardId: number, archived: boolean) => {
+    const targetCard =
+      board?.lists.flatMap((list) => list.cards).find((card) => card.id === cardId) ??
+      (activeCard && activeCard.id === cardId ? activeCard : null);
+
+    if (!archived && targetCard && !canArchiveCard(targetCard)) {
+      setError("アーカイブできるのは「１次対応完了」かつ希望納期を過ぎた案件だけです。");
+      setContextMenu(null);
+      return;
+    }
+
+    try {
+      setError("");
+      const updatedCard = archived ? await unarchiveCard(cardId) : await archiveCard(cardId);
+      const updatedBoard = await fetchBoard(showArchived);
+      setBoard(updatedBoard);
+      setContextMenu(null);
+      if (activeCard?.id === cardId) {
+        if (!updatedCard.archived || showArchived) {
+          setActiveCard(updatedCard);
+        } else {
+          setActiveCard(null);
+          setModalOpen(false);
+        }
+      }
+    } catch {
+      setError("アーカイブ操作に失敗しました。");
+    }
   };
 
   const handleNewCardTitleChange = (listId: number, title: string) => {
@@ -169,7 +276,7 @@ function App() {
         title: "",
         project_no: orderNo,
       });
-      const updatedBoard = await fetchBoard();
+      const updatedBoard = await fetchBoard(showArchived);
       setBoard(updatedBoard);
       setNewCardTitles((current) => ({
         ...current,
@@ -244,6 +351,22 @@ function App() {
             <option value="with-response-date">回答納期あり</option>
             <option value="overdue">回答納期切れ</option>
           </select>
+          <select
+            value={tableSort}
+            onChange={(event) => setTableSort(event.target.value as TableSortMode)}
+          >
+            <option value="default">並び: 既定順</option>
+            <option value="requested-due">並び: 希望納期順</option>
+            <option value="response-due">並び: 回答納期順</option>
+            <option value="order-no">並び: 受注番号順</option>
+          </select>
+          <button
+            className={showArchived ? "primary-button" : "ghost-button"}
+            onClick={() => setShowArchived((current) => !current)}
+            type="button"
+          >
+            {showArchived ? "アーカイブ表示中" : "アーカイブを表示"}
+          </button>
         </div>
       </section>
 
@@ -263,6 +386,7 @@ function App() {
               onDrop={handleDrop}
               onOpenCard={openCard}
               onStartDrag={setDragState}
+              onOpenContextMenu={setContextMenu}
             />
           ))}
         </main>
@@ -279,7 +403,7 @@ function App() {
                   <th>希望納期</th>
                   <th>確認先</th>
                   <th>回答納期</th>
-                  <th>最短の発送日</th>
+                  <th>最短◎発送日</th>
                   <th>備考（理由）</th>
                 </tr>
               </thead>
@@ -289,7 +413,7 @@ function App() {
                     <td>{card.received_date ?? "-"}</td>
                     <td>{card.project_no || "-"}</td>
                     <td>{card.customer_name || card.title}</td>
-                    <td>{card.status}</td>
+                    <td>{card.archived ? "アーカイブ済み" : card.status}</td>
                     <td>{card.requested_due_date ?? "-"}</td>
                     <td>{card.assignee_name || "-"}</td>
                     <td>{card.response_due_date ?? "-"}</td>
@@ -303,11 +427,36 @@ function App() {
         </section>
       )}
 
+      {contextMenu ? (
+        <div
+          className="context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            className="context-menu-item"
+            onClick={() => void openCard(contextMenu.card.id)}
+            type="button"
+          >
+            カードを開く
+          </button>
+          <button
+            className="context-menu-item danger"
+            disabled={!canArchiveCard(contextMenu.card)}
+            onClick={() => void handleArchiveToggle(contextMenu.card.id, contextMenu.card.archived)}
+            type="button"
+          >
+            {contextMenu.card.archived ? "アーカイブ解除" : "アーカイブ"}
+          </button>
+        </div>
+      ) : null}
+
       <CardModal
         card={activeCard}
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         onSaved={(updatedCard) => void handleCardSaved(updatedCard)}
+        onArchiveToggle={(cardId, archived) => void handleArchiveToggle(cardId, archived)}
         statuses={statuses}
       />
     </div>
@@ -324,6 +473,7 @@ type KanbanColumnProps = {
   onDrop: (destinationListId: number, destinationIndex: number) => Promise<void>;
   onOpenCard: (cardId: number) => Promise<void>;
   onStartDrag: (state: DragState) => void;
+  onOpenContextMenu: (menu: ContextMenuState | null) => void;
 };
 
 function KanbanColumn({
@@ -336,6 +486,7 @@ function KanbanColumn({
   onDrop,
   onOpenCard,
   onStartDrag,
+  onOpenContextMenu,
 }: KanbanColumnProps) {
   return (
     <section
@@ -351,10 +502,18 @@ function KanbanColumn({
       <div className="card-list">
         {list.cards.map((card, index) => (
           <article
-            className="card-tile"
-            draggable
+            className={`card-tile${card.archived ? " card-tile-archived" : ""}`}
+            draggable={!card.archived}
             key={card.id}
             onClick={() => void onOpenCard(card.id)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              onOpenContextMenu({
+                x: event.clientX,
+                y: event.clientY,
+                card,
+              });
+            }}
             onDragStart={() =>
               onStartDrag({
                 cardId: card.id,
@@ -379,10 +538,18 @@ function KanbanColumn({
                   {label}
                 </span>
               ))}
+              {card.archived ? <span className="label-chip archived-chip">アーカイブ済み</span> : null}
+            </div>
+            <div className="meta-row">
+              <span>希望納期: {card.requested_due_date ?? "未設定"}</span>
+              <span>確認先: {card.assignee_name || "未設定"}</span>
             </div>
             <div className="meta-row">
               <span>確認先: {card.assignee_name || "未設定"}</span>
-              <span>発送日: {card.earliest_ship_date ?? "未設定"}</span>
+              <span>ステータス: {card.status}</span>
+            </div>
+            <div className="meta-row">
+              <span>最短◎発送日: {card.earliest_ship_date ?? "未設定"}</span>
             </div>
             <div className="meta-row">
               <span>チェック {card.checklist_progress}</span>

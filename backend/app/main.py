@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import initialize_database
-from .repository import add_comment, create_card, fetch_board, fetch_card_detail, move_card, save_card
+from .repository import (
+    add_comment,
+    create_card,
+    fetch_board,
+    fetch_card_detail,
+    move_card,
+    save_card,
+    set_card_archived,
+)
 from .schemas import (
     AddCommentRequest,
     BoardResponse,
@@ -31,8 +39,8 @@ def on_startup() -> None:
 
 
 @app.get("/api/board", response_model=BoardResponse)
-def get_board() -> BoardResponse:
-    return fetch_board()
+def get_board(include_archived: bool = Query(default=False)) -> BoardResponse:
+    return fetch_board(include_archived=include_archived)
 
 
 @app.get("/api/cards/{card_id}", response_model=CardDetail)
@@ -79,4 +87,26 @@ def post_card(list_id: int, payload: CreateCardRequest) -> CardDetail:
     card = create_card(list_id, payload)
     if card is None:
         raise HTTPException(status_code=404, detail="List not found")
+    return card
+
+
+@app.post("/api/cards/{card_id}/archive", response_model=CardDetail)
+def post_archive_card(card_id: int) -> CardDetail:
+    try:
+        card = set_card_archived(card_id, True)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
+    return card
+
+
+@app.post("/api/cards/{card_id}/unarchive", response_model=CardDetail)
+def post_unarchive_card(card_id: int) -> CardDetail:
+    try:
+        card = set_card_archived(card_id, False)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if card is None:
+        raise HTTPException(status_code=404, detail="Card not found")
     return card

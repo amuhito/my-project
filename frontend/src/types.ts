@@ -13,6 +13,7 @@ export type CardSummary = {
   notes: string;
   checklist_progress: string;
   comment_count: number;
+  archived: boolean;
 };
 
 export type BoardList = {
@@ -67,4 +68,5 @@ export type CardDetail = {
   comments: Comment[];
   checklist: ChecklistItem[];
   activities: Activity[];
+  archived: boolean;
 };

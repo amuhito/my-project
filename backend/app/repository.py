@@ -1,21 +1,30 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 from .database import DEFAULT_LIST_TITLES, get_connection
-from .schemas import (
-    AddCommentRequest,
-    BoardResponse,
-    CardDetail,
-    CreateCardRequest,
-    MoveCardRequest,
-    SaveCardRequest,
-)
+from .schemas import AddCommentRequest, BoardResponse, CardDetail, CreateCardRequest, MoveCardRequest, SaveCardRequest
 
 
 def _now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def _today_text() -> str:
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _can_archive_card(status: str, requested_due_date: str | None) -> bool:
+    if status != "１次対応完了" or not requested_due_date:
+        return False
+
+    try:
+        due_date = date.fromisoformat(requested_due_date)
+    except ValueError:
+        return False
+
+    return due_date < date.today()
 
 
 def _clean_text(value: str | None) -> str:
@@ -44,7 +53,7 @@ def _get_list_id_by_title(connection, status: str) -> int | None:
     return None if row is None else row["id"]
 
 
-def fetch_board() -> BoardResponse:
+def fetch_board(include_archived: bool = False) -> BoardResponse:
     with get_connection() as connection:
         board_row = connection.execute("SELECT id, title FROM board LIMIT 1").fetchone()
         list_rows = connection.execute(
@@ -53,6 +62,10 @@ def fetch_board() -> BoardResponse:
 
         lists = []
         for list_row in list_rows:
+            where_clause = "WHERE card.list_id = ?"
+            if not include_archived:
+                where_clause += " AND card.archived = 0"
+
             card_rows = connection.execute(
                 """
                 SELECT
@@ -66,6 +79,7 @@ def fetch_board() -> BoardResponse:
                     card.response_due_date,
                     card.earliest_ship_date,
                     card.notes,
+                    card.archived,
                     card.labels_json,
                     (
                         SELECT COUNT(*)
@@ -84,7 +98,9 @@ def fetch_board() -> BoardResponse:
                           AND checklist_item.completed = 1
                     ) AS checklist_done
                 FROM card
-                WHERE card.list_id = ?
+                """
+                + where_clause
+                + """
                 ORDER BY card.position ASC
                 """,
                 (list_row["id"],),
@@ -110,6 +126,7 @@ def fetch_board() -> BoardResponse:
                         "notes": row["notes"] or "",
                         "checklist_progress": f"{done}/{total}",
                         "comment_count": row["comment_count"],
+                        "archived": bool(row["archived"]),
                     }
                 )
 
@@ -143,6 +160,7 @@ def fetch_card_detail(card_id: int) -> CardDetail | None:
                 card.description,
                 card.notes,
                 card.history_text,
+                card.archived,
                 card.labels_json,
                 board_list.title AS status
             FROM card
@@ -214,6 +232,7 @@ def fetch_card_detail(card_id: int) -> CardDetail | None:
                 }
                 for row in activity_rows
             ],
+            archived=bool(card_row["archived"]),
         )
 
 
@@ -385,6 +404,8 @@ def save_card(card_id: int, payload: SaveCardRequest) -> CardDetail | None:
             messages.append("受注番号を更新しました")
         if current["customer_name"] != _clean_text(payload.customer_name):
             messages.append("ユーザー名を更新しました")
+        if (current["requested_due_date"] or None) != (payload.requested_due_date or None):
+            messages.append("希望納期を更新しました")
         if (current["response_due_date"] or None) != (payload.response_due_date or None):
             messages.append("回答納期を更新しました")
         if (current["earliest_ship_date"] or None) != (payload.earliest_ship_date or None):
@@ -445,10 +466,11 @@ def create_card(list_id: int, payload: CreateCardRequest) -> CardDetail | None:
                 position,
                 project_no,
                 customer_name,
+                received_date,
                 notes,
                 history_text
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 list_id,
@@ -458,6 +480,7 @@ def create_card(list_id: int, payload: CreateCardRequest) -> CardDetail | None:
                 next_position,
                 _clean_text(payload.project_no),
                 _clean_text(payload.customer_name),
+                _today_text(),
                 "",
                 "",
             ),
@@ -467,6 +490,46 @@ def create_card(list_id: int, payload: CreateCardRequest) -> CardDetail | None:
         connection.execute(
             "INSERT INTO activity (card_id, message, created_at) VALUES (?, ?, ?)",
             (card_id, f"「{list_row['title']}」にカードを作成しました", _now_text()),
+        )
+
+    return fetch_card_detail(card_id)
+
+
+def set_card_archived(card_id: int, archived: bool) -> CardDetail | None:
+    with get_connection() as connection:
+        card_row = connection.execute(
+            """
+            SELECT
+                card.id,
+                card.archived,
+                card.requested_due_date,
+                board_list.title AS status
+            FROM card
+            JOIN board_list ON board_list.id = card.list_id
+            WHERE card.id = ?
+            """,
+            (card_id,),
+        ).fetchone()
+        if card_row is None:
+            return None
+
+        if archived and not bool(card_row["archived"]) and not _can_archive_card(
+            card_row["status"],
+            card_row["requested_due_date"],
+        ):
+            raise ValueError("アーカイブできるのは「１次対応完了」かつ希望納期を過ぎた案件だけです。")
+
+        connection.execute(
+            "UPDATE card SET archived = ? WHERE id = ?",
+            (int(archived), card_id),
+        )
+        connection.execute(
+            "INSERT INTO activity (card_id, message, created_at) VALUES (?, ?, ?)",
+            (
+                card_id,
+                "アーカイブしました" if archived else "アーカイブを解除しました",
+                _now_text(),
+            ),
         )
 
     return fetch_card_detail(card_id)

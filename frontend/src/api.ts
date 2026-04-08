@@ -2,8 +2,8 @@ import type { BoardResponse, CardDetail, ChecklistItem } from "./types";
 
 const API_BASE = "http://127.0.0.1:8000/api";
 
-export async function fetchBoard(): Promise<BoardResponse> {
-  const response = await fetch(`${API_BASE}/board`);
+export async function fetchBoard(includeArchived = false): Promise<BoardResponse> {
+  const response = await fetch(`${API_BASE}/board?include_archived=${includeArchived}`);
   return handleResponse(response);
 }
 
@@ -75,6 +75,20 @@ export async function createCard(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
+export async function archiveCard(cardId: number): Promise<CardDetail> {
+  const response = await fetch(`${API_BASE}/cards/${cardId}/archive`, {
+    method: "POST",
+  });
+  return handleResponse(response);
+}
+
+export async function unarchiveCard(cardId: number): Promise<CardDetail> {
+  const response = await fetch(`${API_BASE}/cards/${cardId}/unarchive`, {
+    method: "POST",
   });
   return handleResponse(response);
 }

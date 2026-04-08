@@ -57,6 +57,7 @@ def initialize_database() -> None:
                 earliest_ship_date TEXT,
                 notes TEXT NOT NULL DEFAULT '',
                 history_text TEXT NOT NULL DEFAULT '',
+                archived INTEGER NOT NULL DEFAULT 0,
                 position INTEGER NOT NULL,
                 FOREIGN KEY (list_id) REFERENCES board_list(id) ON DELETE CASCADE
             );
@@ -141,6 +142,7 @@ def migrate_card_table(connection: sqlite3.Connection) -> None:
         "earliest_ship_date": "TEXT",
         "notes": "TEXT NOT NULL DEFAULT ''",
         "history_text": "TEXT NOT NULL DEFAULT ''",
+        "archived": "INTEGER NOT NULL DEFAULT 0",
     }
 
     for column_name, column_type in required_columns.items():

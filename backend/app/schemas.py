@@ -38,6 +38,7 @@ class CardSummary(BaseModel):
     notes: str
     checklist_progress: str
     comment_count: int
+    archived: bool
 
 
 class CardDetail(BaseModel):
@@ -59,6 +60,7 @@ class CardDetail(BaseModel):
     comments: list[Comment]
     checklist: list[ChecklistItem]
     activities: list[Activity]
+    archived: bool
 
 
 class BoardList(BaseModel):
