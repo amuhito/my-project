@@ -16,9 +16,14 @@ cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
 powershell -ExecutionPolicy Bypass -File .\start-local.ps1
 ```
 
-これでバックエンド用とフロントエンド用の PowerShell が別ウィンドウで開きます。
+または:
 
-`start-local.cmd` を実行しても同じです。
+```powershell
+cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
+.\start-local.cmd
+```
+
+これでバックエンド用とフロントエンド用の PowerShell が別ウィンドウで開きます。
 
 ### 個別起動
 
@@ -26,21 +31,15 @@ powershell -ExecutionPolicy Bypass -File .\start-local.ps1
 
 ```powershell
 cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
-powershell -ExecutionPolicy Bypass -File .\start-backend.ps1
+.\start-backend.cmd
 ```
 
 フロントエンドだけ起動する場合:
 
 ```powershell
 cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
-powershell -ExecutionPolicy Bypass -File .\start-frontend.ps1
+.\start-frontend.cmd
 ```
-
-`.cmd` 版を使う場合:
-
-- `start-backend.cmd`
-- `start-frontend.cmd`
-- `start-local.cmd`
 
 ## アクセス先
 
