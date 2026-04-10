@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "kanban.db"
+
+
+def get_db_path() -> Path:
+    configured = os.getenv("KANBAN_DB_PATH", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return BASE_DIR / "kanban.db"
+
+
+DB_PATH = get_db_path()
 
 DEFAULT_BOARD_TITLE = "納期確認ボード"
 DEFAULT_LIST_TITLES = [
@@ -18,6 +28,7 @@ DEFAULT_LIST_TITLES = [
 
 
 def get_connection() -> sqlite3.Connection:
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON;")

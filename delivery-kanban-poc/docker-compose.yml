@@ -1,0 +1,14 @@
+services:
+  app:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    environment:
+      KANBAN_DB_PATH: /data/kanban.db
+      KANBAN_CORS_ORIGINS: "*"
+    volumes:
+      - kanban_data:/data
+
+volumes:
+  kanban_data:

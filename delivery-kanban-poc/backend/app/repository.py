@@ -45,6 +45,26 @@ def _build_title(project_no: str, customer_name: str, fallback_title: str) -> st
     return fallback_title or "新規案件"
 
 
+def _ensure_unique_project_no(connection, project_no: str, exclude_card_id: int | None = None) -> None:
+    normalized_project_no = _clean_text(project_no)
+    if not normalized_project_no:
+        return
+
+    if exclude_card_id is None:
+        duplicate_row = connection.execute(
+            "SELECT id FROM card WHERE project_no = ? LIMIT 1",
+            (normalized_project_no,),
+        ).fetchone()
+    else:
+        duplicate_row = connection.execute(
+            "SELECT id FROM card WHERE project_no = ? AND id != ? LIMIT 1",
+            (normalized_project_no, exclude_card_id),
+        ).fetchone()
+
+    if duplicate_row is not None:
+        raise ValueError("同じ受注番号のカードが既に存在します。別の受注番号で登録してください。")
+
+
 def _get_list_id_by_title(connection, status: str) -> int | None:
     row = connection.execute(
         "SELECT id FROM board_list WHERE title = ? ORDER BY position ASC LIMIT 1",
@@ -74,6 +94,11 @@ def fetch_board(include_archived: bool = False) -> BoardResponse:
                     card.project_no,
                     card.customer_name,
                     card.received_date,
+                    (
+                        SELECT MAX(activity.created_at)
+                        FROM activity
+                        WHERE activity.card_id = card.id
+                    ) AS latest_activity_at,
                     card.requested_due_date,
                     card.assignee_name,
                     card.response_due_date,
@@ -118,6 +143,7 @@ def fetch_board(include_archived: bool = False) -> BoardResponse:
                         "customer_name": row["customer_name"] or row["title"],
                         "status": list_row["title"],
                         "received_date": row["received_date"],
+                        "latest_activity_at": row["latest_activity_at"],
                         "labels": json.loads(row["labels_json"]),
                         "requested_due_date": row["requested_due_date"],
                         "assignee_name": row["assignee_name"] or "",
@@ -153,6 +179,11 @@ def fetch_card_detail(card_id: int) -> CardDetail | None:
                 card.project_no,
                 card.customer_name,
                 card.received_date,
+                (
+                    SELECT MAX(activity.created_at)
+                    FROM activity
+                    WHERE activity.card_id = card.id
+                ) AS latest_activity_at,
                 card.requested_due_date,
                 card.assignee_name,
                 card.response_due_date,
@@ -198,6 +229,7 @@ def fetch_card_detail(card_id: int) -> CardDetail | None:
             customer_name=card_row["customer_name"] or "",
             status=card_row["status"],
             received_date=card_row["received_date"],
+            latest_activity_at=card_row["latest_activity_at"],
             requested_due_date=card_row["requested_due_date"],
             assignee_name=card_row["assignee_name"] or "",
             response_due_date=card_row["response_due_date"],
@@ -329,6 +361,7 @@ def save_card(card_id: int, payload: SaveCardRequest) -> CardDetail | None:
             ).fetchone()[0]
 
         next_title = _build_title(payload.project_no, payload.customer_name, payload.title)
+        _ensure_unique_project_no(connection, payload.project_no, exclude_card_id=card_id)
         connection.execute(
             """
             UPDATE card
@@ -455,6 +488,7 @@ def create_card(list_id: int, payload: CreateCardRequest) -> CardDetail | None:
             (list_id,),
         ).fetchone()[0]
         title = _build_title(payload.project_no, payload.customer_name, payload.title)
+        _ensure_unique_project_no(connection, payload.project_no)
 
         cursor = connection.execute(
             """

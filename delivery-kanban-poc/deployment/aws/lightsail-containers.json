@@ -1,0 +1,13 @@
+{
+  "app": {
+    "image": "IMAGE_NAME",
+    "ports": {
+      "8000": "HTTP"
+    },
+    "environment": {
+      "KANBAN_DB_PATH": "/tmp/kanban.db",
+      "KANBAN_CORS_ORIGINS": "*",
+      "KANBAN_FRONTEND_DIST": "/app/frontend-dist"
+    }
+  }
+}

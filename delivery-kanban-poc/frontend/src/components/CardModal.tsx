@@ -84,6 +84,7 @@ export function CardModal({
   const [saving, setSaving] = useState(false);
   const [activityVisible, setActivityVisible] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   useEffect(() => {
     if (!card) {
@@ -104,6 +105,7 @@ export function CardModal({
     setCommentDraft("");
     setActivityVisible(false);
     setMenuOpen(false);
+    setSaveError("");
   }, [card]);
 
   const timelineItems = useMemo<TimelineItem[]>(() => {
@@ -176,6 +178,7 @@ export function CardModal({
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError("");
     try {
       const updated = await saveCard(card.id, {
         title: [projectNo, customerName].filter(Boolean).join(" "),
@@ -204,6 +207,8 @@ export function CardModal({
           })),
       });
       onSaved(updated);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "保存に失敗しました。");
     } finally {
       setSaving(false);
     }
@@ -284,6 +289,7 @@ export function CardModal({
 
         <div className="modal-grid modal-grid-wide">
           <section className="modal-main">
+            {saveError ? <div className="error-banner">{saveError}</div> : null}
             <div className="row-fields row-fields-3">
               <label className="field">
                 <span>受注番号</span>

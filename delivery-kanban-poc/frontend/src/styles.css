@@ -210,6 +210,18 @@ button {
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
 }
 
+.card-tile-alert {
+  border-color: rgba(220, 38, 38, 0.34);
+  background: linear-gradient(180deg, #fff5f5 0%, #fee2e2 100%);
+  box-shadow: 0 14px 28px rgba(220, 38, 38, 0.14);
+}
+
+.card-tile-alert-strong {
+  border-color: rgba(185, 28, 28, 0.5);
+  background: linear-gradient(180deg, #fee2e2 0%, #fecaca 100%);
+  box-shadow: 0 18px 32px rgba(185, 28, 28, 0.18);
+}
+
 .card-tile h3 {
   margin: 10px 0 12px;
   font-size: 17px;
@@ -264,6 +276,16 @@ button {
 .archived-chip {
   background: #e2e8f0;
   color: #475569;
+}
+
+.alert-chip {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.alert-chip-strong {
+  background: #ef4444;
+  color: #fff7ed;
 }
 
 .meta-row {

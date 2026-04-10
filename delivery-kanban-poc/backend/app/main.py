@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .database import initialize_database
 from .repository import (
@@ -22,12 +27,32 @@ from .schemas import (
     SaveCardRequest,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+
+
+def get_allowed_origins() -> list[str]:
+    configured = os.getenv("KANBAN_CORS_ORIGINS", "").strip()
+    if not configured:
+        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+    if configured == "*":
+        return ["*"]
+    return [origin.strip() for origin in configured.split(",") if origin.strip()]
+
+
+def get_frontend_dist() -> Path:
+    configured = os.getenv("KANBAN_FRONTEND_DIST", "").strip()
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return DEFAULT_FRONTEND_DIST
+
+
 app = FastAPI(title="Kanban POC API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
+    allow_origins=get_allowed_origins(),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -36,6 +61,11 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup() -> None:
     initialize_database()
+
+
+@app.get("/api/health")
+def get_health() -> dict[str, str]:
+    return {"status": "ok"}
 
 
 @app.get("/api/board", response_model=BoardResponse)
@@ -64,7 +94,10 @@ def post_move_card(payload: MoveCardRequest) -> BoardResponse:
 def put_card(card_id: int, payload: SaveCardRequest) -> CardDetail:
     if not (payload.title.strip() or payload.project_no.strip() or payload.customer_name.strip()):
         raise HTTPException(status_code=400, detail="Card title or business fields are required")
-    card = save_card(card_id, payload)
+    try:
+        card = save_card(card_id, payload)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     if card is None:
         raise HTTPException(status_code=404, detail="Card not found")
     return card
@@ -84,7 +117,10 @@ def post_comment(card_id: int, payload: AddCommentRequest) -> CardDetail:
 def post_card(list_id: int, payload: CreateCardRequest) -> CardDetail:
     if not (payload.title.strip() or payload.project_no.strip() or payload.customer_name.strip()):
         raise HTTPException(status_code=400, detail="Card title or business fields are required")
-    card = create_card(list_id, payload)
+    try:
+        card = create_card(list_id, payload)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     if card is None:
         raise HTTPException(status_code=404, detail="List not found")
     return card
@@ -110,3 +146,28 @@ def post_unarchive_card(card_id: int) -> CardDetail:
     if card is None:
         raise HTTPException(status_code=404, detail="Card not found")
     return card
+
+
+frontend_dist = get_frontend_dist()
+frontend_assets = frontend_dist / "assets"
+frontend_index = frontend_dist / "index.html"
+
+if frontend_assets.exists():
+    app.mount("/assets", StaticFiles(directory=frontend_assets), name="assets")
+
+
+if frontend_index.exists():
+
+    @app.get("/", include_in_schema=False)
+    def serve_index() -> FileResponse:
+        return FileResponse(frontend_index)
+
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def serve_spa(full_path: str) -> FileResponse:
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found")
+        candidate = frontend_dist / full_path
+        if candidate.exists() and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(frontend_index)

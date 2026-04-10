@@ -7,3 +7,6 @@ output/
 frontend/node_modules/
 frontend/dist/
 backend/kanban.db
+delivery-kanban-poc/frontend/node_modules/
+delivery-kanban-poc/frontend/dist/
+delivery-kanban-poc/backend/kanban.db

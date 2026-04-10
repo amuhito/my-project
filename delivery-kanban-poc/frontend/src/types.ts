@@ -5,6 +5,7 @@ export type CardSummary = {
   customer_name: string;
   status: string;
   received_date: string | null;
+  latest_activity_at: string | null;
   labels: string[];
   requested_due_date: string | null;
   assignee_name: string;
@@ -57,6 +58,7 @@ export type CardDetail = {
   customer_name: string;
   status: string;
   received_date: string | null;
+  latest_activity_at: string | null;
   requested_due_date: string | null;
   assignee_name: string;
   response_due_date: string | null;

@@ -30,6 +30,7 @@ class CardSummary(BaseModel):
     customer_name: str
     status: str
     received_date: str | None
+    latest_activity_at: str | None
     labels: list[str]
     requested_due_date: str | None
     assignee_name: str
@@ -49,6 +50,7 @@ class CardDetail(BaseModel):
     customer_name: str
     status: str
     received_date: str | None
+    latest_activity_at: str | None
     requested_due_date: str | None
     assignee_name: str
     response_due_date: str | None

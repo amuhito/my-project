@@ -1,0 +1,10 @@
+.git
+.gitignore
+backend/.venv
+backend/__pycache__
+backend/kanban.db
+frontend/node_modules
+frontend/dist
+frontend/.env
+**/__pycache__
+**/*.pyc

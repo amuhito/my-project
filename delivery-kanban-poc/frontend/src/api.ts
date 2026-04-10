@@ -1,6 +1,10 @@
 import type { BoardResponse, CardDetail, ChecklistItem } from "./types";
 
-const API_BASE = "http://127.0.0.1:8000/api";
+const apiRoot = (
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? "http://127.0.0.1:8000" : "")
+).replace(/\/$/, "");
+const API_BASE = apiRoot ? `${apiRoot}/api` : "/api";
 
 export async function fetchBoard(includeArchived = false): Promise<BoardResponse> {
   const response = await fetch(`${API_BASE}/board?include_archived=${includeArchived}`);
@@ -95,7 +99,16 @@ export async function unarchiveCard(cardId: number): Promise<CardDetail> {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    let message = `Request failed: ${response.status}`;
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (payload.detail) {
+        message = payload.detail;
+      }
+    } catch {
+      // Ignore JSON parse failures and keep the default message.
+    }
+    throw new Error(message);
   }
   return (await response.json()) as T;
 }
