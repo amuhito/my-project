@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { addComment, saveCard } from "../api";
+import { compareDateTimeDesc, formatDateTimeLocal } from "../datetime";
 import type { CardDetail, ChecklistItem } from "../types";
 
 type CardModalProps = {
@@ -135,7 +136,7 @@ export function CardModal({
       : [];
 
     return [...commentItems, ...activityItems].sort((left, right) =>
-      right.createdAt.localeCompare(left.createdAt),
+      compareDateTimeDesc(left.createdAt, right.createdAt),
     );
   }, [activityVisible, card]);
 
@@ -473,7 +474,7 @@ export function CardModal({
                         <strong>
                           {item.kind === "comment" ? `${item.author}さんがコメントしました` : item.message}
                         </strong>
-                        <span>{item.createdAt}</span>
+                        <span>{formatDateTimeLocal(item.createdAt)}</span>
                       </div>
                       {item.kind === "comment" ? (
                         <div className="timeline-body timeline-body-comment">{item.body}</div>

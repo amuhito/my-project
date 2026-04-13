@@ -1,6 +1,6 @@
 {
   "app": {
-    "image": ":delivery-kanban-poc.app.4",
+    "image": ":delivery-kanban-poc.app.5",
     "ports": {
       "8000": "HTTP"
     },

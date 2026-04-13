@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 from .auth import AuthUser
 from .database import DEFAULT_LIST_TITLES, get_connection
@@ -9,7 +9,7 @@ from .schemas import AddCommentRequest, BoardResponse, CardDetail, CreateCardReq
 
 
 def _now_text() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _today_text() -> str:
@@ -96,9 +96,11 @@ def fetch_board(include_archived: bool = False) -> BoardResponse:
                     card.customer_name,
                     card.received_date,
                     (
-                        SELECT MAX(activity.created_at)
+                        SELECT activity.created_at
                         FROM activity
                         WHERE activity.card_id = card.id
+                        ORDER BY datetime(activity.created_at) DESC, activity.id DESC
+                        LIMIT 1
                     ) AS latest_activity_at,
                     card.requested_due_date,
                     card.assignee_name,
@@ -181,9 +183,11 @@ def fetch_card_detail(card_id: int) -> CardDetail | None:
                 card.customer_name,
                 card.received_date,
                 (
-                    SELECT MAX(activity.created_at)
+                    SELECT activity.created_at
                     FROM activity
                     WHERE activity.card_id = card.id
+                    ORDER BY datetime(activity.created_at) DESC, activity.id DESC
+                    LIMIT 1
                 ) AS latest_activity_at,
                 card.requested_due_date,
                 card.assignee_name,
