@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { archiveCard, createCard, fetchBoard, fetchCard, moveCard, unarchiveCard } from "./api";
 import { CardModal } from "./components/CardModal";
+import { canArchiveCard, getAgedAlert } from "./utils/cardRules";
 import type { BoardList, BoardResponse, CardDetail, CardSummary } from "./types";
 
 type DragState = {
@@ -17,85 +18,6 @@ type ContextMenuState = {
   y: number;
   card: CardSummary;
 };
-
-const ARCHIVABLE_STATUS = "１次対応完了";
-
-function todayText() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function canArchiveCard(card: Pick<CardSummary, "archived" | "status" | "requested_due_date">) {
-  if (card.archived) {
-    return true;
-  }
-
-  return card.status === ARCHIVABLE_STATUS && !!card.requested_due_date && card.requested_due_date < todayText();
-}
-
-function countBusinessDaysSince(dateText: string) {
-  const baseDate = new Date(`${dateText.slice(0, 10)}T00:00:00`);
-  const today = new Date(`${todayText()}T00:00:00`);
-
-  if (Number.isNaN(baseDate.getTime()) || baseDate >= today) {
-    return 0;
-  }
-
-  let businessDays = 0;
-  const current = new Date(baseDate);
-  current.setDate(current.getDate() + 1);
-
-  while (current < today) {
-    const day = current.getDay();
-    if (day !== 0 && day !== 6) {
-      businessDays += 1;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-
-  return businessDays;
-}
-
-function toAlertLevel(diffDays: number) {
-  if (diffDays >= 2) {
-    return 2;
-  }
-  if (diffDays >= 1) {
-    return 1;
-  }
-  return 0;
-}
-
-function getAgedAlert(
-  card: Pick<CardSummary, "archived" | "status" | "received_date" | "latest_activity_at">,
-) {
-  if (card.archived) {
-    return null;
-  }
-
-  const activityLevel = card.latest_activity_at
-    ? toAlertLevel(countBusinessDaysSince(card.latest_activity_at))
-    : 0;
-  const receivedLevel =
-    card.status === "未対応" && card.received_date
-      ? toAlertLevel(countBusinessDaysSince(card.received_date))
-      : 0;
-
-  if (receivedLevel >= activityLevel && receivedLevel > 0) {
-    return {
-      level: receivedLevel,
-      label: receivedLevel >= 2 ? "未対応2営業日以上経過" : "未対応1営業日経過",
-    };
-  }
-
-  if (activityLevel > 0) {
-    return {
-      level: activityLevel,
-      label: activityLevel >= 2 ? "2営業日以上経過" : "1営業日経過",
-    };
-  }
-
-  return null;
-}
 
 function App() {
   const [board, setBoard] = useState<BoardResponse | null>(null);
@@ -565,73 +487,74 @@ function KanbanColumn({
       </div>
 
       <div className="card-list">
-        {list.cards.map((card, index) => (
-          <article
-            className={`card-tile${card.archived ? " card-tile-archived" : ""}${
-              getAgedAlert(card)?.level === 1 ? " card-tile-alert" : ""
-            }${
-              (getAgedAlert(card)?.level ?? 0) >= 2 ? " card-tile-alert-strong" : ""
-            }`}
-            draggable={!card.archived}
-            key={card.id}
-            onClick={() => void onOpenCard(card.id)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              onOpenContextMenu({
-                x: event.clientX,
-                y: event.clientY,
-                card,
-              });
-            }}
-            onDragStart={() =>
-              onStartDrag({
-                cardId: card.id,
-                sourceListId: lookup.get(card.id)?.listId ?? list.id,
-              })
-            }
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void onDrop(list.id, index);
-            }}
-          >
-            <div className="card-topline">
-              <span className="card-order-no">{card.project_no || "受注番号未設定"}</span>
-              <span className="due-pill">{card.response_due_date ?? "回答納期未設定"}</span>
-            </div>
-            <h3 className="card-customer-name">{card.customer_name || card.title}</h3>
-            <div className="label-row">
-              {card.labels.map((label) => (
-                <span className="label-chip" key={`${card.id}-${label}`}>
-                  {label}
-                </span>
-              ))}
-              {getAgedAlert(card)?.level === 1 ? (
-                <span className="label-chip alert-chip">{getAgedAlert(card)?.label}</span>
-              ) : null}
-              {(getAgedAlert(card)?.level ?? 0) >= 2 ? (
-                <span className="label-chip alert-chip alert-chip-strong">{getAgedAlert(card)?.label}</span>
-              ) : null}
-              {card.archived ? <span className="label-chip archived-chip">アーカイブ済み</span> : null}
-            </div>
-            <div className="meta-row">
-              <span>希望納期: {card.requested_due_date ?? "未設定"}</span>
-              <span>確認先: {card.assignee_name || "未設定"}</span>
-            </div>
-            <div className="meta-row">
-              <span>確認先: {card.assignee_name || "未設定"}</span>
-              <span>ステータス: {card.status}</span>
-            </div>
-            <div className="meta-row">
-              <span>最短◎発送日: {card.earliest_ship_date ?? "未設定"}</span>
-            </div>
-            <div className="meta-row">
-              <span>チェック {card.checklist_progress}</span>
-              <span>コメント {card.comment_count}</span>
-            </div>
-          </article>
-        ))}
+        {list.cards.map((card, index) => {
+          const agedAlert = getAgedAlert(card);
+
+          return (
+            <article
+              className={`card-tile${card.archived ? " card-tile-archived" : ""}${
+                agedAlert?.level === 1 ? " card-tile-alert" : ""
+              }${
+                (agedAlert?.level ?? 0) >= 2 ? " card-tile-alert-strong" : ""
+              }`}
+              draggable={!card.archived}
+              key={card.id}
+              onClick={() => void onOpenCard(card.id)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onOpenContextMenu({
+                  x: event.clientX,
+                  y: event.clientY,
+                  card,
+                });
+              }}
+              onDragStart={() =>
+                onStartDrag({
+                  cardId: card.id,
+                  sourceListId: lookup.get(card.id)?.listId ?? list.id,
+                })
+              }
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                void onDrop(list.id, index);
+              }}
+            >
+              <div className="card-topline">
+                <span className="card-order-no">{card.project_no || "受注番号未設定"}</span>
+                <span className="due-pill">{card.response_due_date ?? "回答納期未設定"}</span>
+              </div>
+              <h3 className="card-customer-name">{card.customer_name || card.title}</h3>
+              <div className="label-row">
+                {card.labels.map((label) => (
+                  <span className="label-chip" key={`${card.id}-${label}`}>
+                    {label}
+                  </span>
+                ))}
+                {agedAlert?.level === 1 ? (
+                  <span className="label-chip alert-chip">{agedAlert.label}</span>
+                ) : null}
+                {agedAlert?.level === 2 ? (
+                  <span className="label-chip alert-chip alert-chip-strong">{agedAlert.label}</span>
+                ) : null}
+                {card.archived ? <span className="label-chip archived-chip">アーカイブ済み</span> : null}
+              </div>
+              <div className="meta-row">
+                <span>希望納期: {card.requested_due_date ?? "未設定"}</span>
+                <span>確認先: {card.assignee_name || "未設定"}</span>
+              </div>
+              <div className="meta-row">
+                <span>ステータス: {card.status}</span>
+                <span>最短◎発送日: {card.earliest_ship_date ?? "未設定"}</span>
+              </div>
+              <div className="meta-row">
+                <span>チェック {card.checklist_progress}</span>
+                <span>コメント {card.comment_count}</span>
+              </div>
+            </article>
+          );
+        })}
       </div>
 
       <div className="add-card-box">

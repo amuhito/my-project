@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { addComment, saveCard } from "../api";
+import { ARCHIVABLE_STATUS } from "../constants";
 import type { CardDetail, ChecklistItem } from "../types";
 
 type CardModalProps = {
@@ -27,8 +28,6 @@ type TimelineItem =
       message: string;
       createdAt: string;
     };
-
-const ARCHIVABLE_STATUS = "１次対応完了";
 
 function todayText() {
   return new Date().toISOString().slice(0, 10);
