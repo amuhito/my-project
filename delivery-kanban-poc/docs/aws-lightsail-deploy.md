@@ -17,8 +17,8 @@
 
 ## 1. Docker イメージを作る
 
-```powershell
-cd C:\Users\A000594001\my-project\delivery-kanban-poc
+```bash
+cd /path/to/delivery-kanban-poc
 docker build -t delivery-kanban-poc:latest .
 ```
 
@@ -26,17 +26,17 @@ docker build -t delivery-kanban-poc:latest .
 
 まず AWS CLI の認証を済ませます。
 
-```powershell
+```bash
 aws configure
 ```
 
 次にコンテナサービスを作ります。
 
-```powershell
-aws lightsail create-container-service `
-  --service-name delivery-kanban-poc `
-  --power nano `
-  --scale 1 `
+```bash
+aws lightsail create-container-service \
+  --service-name delivery-kanban-poc \
+  --power nano \
+  --scale 1 \
   --region ap-northeast-1
 ```
 
@@ -44,11 +44,11 @@ aws lightsail create-container-service `
 
 ## 3. イメージを Lightsail へ push する
 
-```powershell
-aws lightsail push-container-image `
-  --service-name delivery-kanban-poc `
-  --label app `
-  --image delivery-kanban-poc:latest `
+```bash
+aws lightsail push-container-image \
+  --service-name delivery-kanban-poc \
+  --label app \
+  --image delivery-kanban-poc:latest \
   --region ap-northeast-1
 ```
 
@@ -63,17 +63,17 @@ aws lightsail push-container-image `
 
 ## 4. デプロイ定義を作る
 
-[deployment/aws/lightsail-containers.json](C:\Users\A000594001\my-project\delivery-kanban-poc\deployment\aws\lightsail-containers.json) の `IMAGE_NAME` を、push 結果のイメージ名に置き換えます。
+[deployment/aws/lightsail-containers.json](../deployment/aws/lightsail-containers.json) の `IMAGE_NAME` を、push 結果のイメージ名に置き換えます。
 
 必要なら `KANBAN_CORS_ORIGINS` も実 URL に変えてください。
 
 ## 5. デプロイする
 
-```powershell
-aws lightsail create-container-service-deployment `
-  --service-name delivery-kanban-poc `
-  --containers file://deployment/aws/lightsail-containers.json `
-  --public-endpoint file://deployment/aws/lightsail-public-endpoint.json `
+```bash
+aws lightsail create-container-service-deployment \
+  --service-name delivery-kanban-poc \
+  --containers file://deployment/aws/lightsail-containers.json \
+  --public-endpoint file://deployment/aws/lightsail-public-endpoint.json \
   --region ap-northeast-1
 ```
 

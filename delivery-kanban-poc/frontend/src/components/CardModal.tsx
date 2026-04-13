@@ -61,6 +61,10 @@ function getInitials(text: string) {
   return text.trim().slice(0, 2).toUpperCase() || "AI";
 }
 
+function isUnauthorizedError(error: unknown) {
+  return error instanceof Error && error.message === "UNAUTHORIZED";
+}
+
 export function CardModal({
   card,
   open,
@@ -208,7 +212,11 @@ export function CardModal({
       });
       onSaved(updated);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "保存に失敗しました。");
+      if (isUnauthorizedError(error)) {
+        setSaveError("セッションが切れました。再ログインしてください。");
+      } else {
+        setSaveError(error instanceof Error ? error.message : "保存に失敗しました。");
+      }
     } finally {
       setSaving(false);
     }
@@ -224,6 +232,13 @@ export function CardModal({
       const updated = await addComment(card.id, commentDraft);
       onSaved(updated);
       setCommentDraft("");
+      setSaveError("");
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        setSaveError("セッションが切れました。再ログインしてください。");
+      } else {
+        setSaveError("コメントの追加に失敗しました。");
+      }
     } finally {
       setSaving(false);
     }

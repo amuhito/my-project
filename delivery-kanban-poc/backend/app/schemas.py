@@ -119,3 +119,25 @@ class CreateCardRequest(BaseModel):
     project_no: str = ""
     customer_name: str = ""
     description: str = ""
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthUserResponse(BaseModel):
+    id: int
+    username: str
+    display_name: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user: AuthUserResponse
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    display_name: str
+    password: str
