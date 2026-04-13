@@ -623,7 +623,13 @@ function App() {
                     <td>{card.received_date ?? "-"}</td>
                     <td>{card.project_no || "-"}</td>
                     <td>{card.customer_name || card.title}</td>
-                    <td>{card.archived ? "アーカイブ済み" : card.status}</td>
+                    <td>
+                      {card.archived
+                        ? "アーカイブ済み"
+                        : canArchiveCard(card)
+                          ? `${card.status}（アーカイブ可能）`
+                          : card.status}
+                    </td>
                     <td>{card.requested_due_date ?? "-"}</td>
                     <td>{card.assignee_name || "-"}</td>
                     <td>{card.response_due_date ?? "-"}</td>
@@ -959,6 +965,9 @@ function KanbanColumn({
               ) : null}
               {(getAgedAlert(card)?.level ?? 0) >= 2 ? (
                 <span className="label-chip alert-chip alert-chip-strong">{getAgedAlert(card)?.label}</span>
+              ) : null}
+              {!card.archived && canArchiveCard(card) ? (
+                <span className="label-chip archivable-chip">アーカイブ可能</span>
               ) : null}
               {card.archived ? <span className="label-chip archived-chip">アーカイブ済み</span> : null}
             </div>

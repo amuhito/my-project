@@ -332,6 +332,11 @@ button {
   color: #fff7ed;
 }
 
+.archivable-chip {
+  background: #dcfce7;
+  color: #166534;
+}
+
 .meta-row {
   color: #64748b;
   font-size: 12px;
