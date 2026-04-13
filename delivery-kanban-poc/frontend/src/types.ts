@@ -72,3 +72,9 @@ export type CardDetail = {
   activities: Activity[];
   archived: boolean;
 };
+
+export type AuthUser = {
+  id: number;
+  username: string;
+  display_name: string;
+};

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
+from .auth import AuthUser
 from .database import DEFAULT_LIST_TITLES, get_connection
 from .schemas import AddCommentRequest, BoardResponse, CardDetail, CreateCardRequest, MoveCardRequest, SaveCardRequest
 
@@ -268,7 +269,7 @@ def fetch_card_detail(card_id: int) -> CardDetail | None:
         )
 
 
-def move_card(payload: MoveCardRequest) -> None:
+def move_card(payload: MoveCardRequest, actor: AuthUser) -> None:
     with get_connection() as connection:
         card_row = connection.execute("SELECT id FROM card WHERE id = ?", (payload.card_id,)).fetchone()
         if card_row is None:
@@ -302,12 +303,16 @@ def move_card(payload: MoveCardRequest) -> None:
             (payload.destination_list_id,),
         ).fetchone()["title"]
         connection.execute(
-            "INSERT INTO activity (card_id, message, created_at) VALUES (?, ?, ?)",
-            (payload.card_id, f"「{destination_title}」に移動しました", _now_text()),
+            "INSERT INTO activity (card_id, actor_user_id, message, created_at) VALUES (?, ?, ?, ?)",
+            (payload.card_id, actor.id, f"{actor.display_name}さんが「{destination_title}」に移動しました", _now_text()),
+        )
+        connection.execute(
+            "UPDATE card SET updated_by_user_id = ? WHERE id = ?",
+            (actor.id, payload.card_id),
         )
 
 
-def save_card(card_id: int, payload: SaveCardRequest) -> CardDetail | None:
+def save_card(card_id: int, payload: SaveCardRequest, actor: AuthUser) -> CardDetail | None:
     with get_connection() as connection:
         current = connection.execute(
             """
@@ -379,7 +384,8 @@ def save_card(card_id: int, payload: SaveCardRequest) -> CardDetail | None:
                 description = ?,
                 notes = ?,
                 history_text = ?,
-                labels_json = ?
+                labels_json = ?,
+                updated_by_user_id = ?
             WHERE id = ?
             """,
             (
@@ -397,6 +403,7 @@ def save_card(card_id: int, payload: SaveCardRequest) -> CardDetail | None:
                 _clean_text(payload.notes),
                 _clean_text(payload.history_text),
                 json.dumps(payload.labels, ensure_ascii=False),
+                actor.id,
                 card_id,
             ),
         )
@@ -449,32 +456,36 @@ def save_card(card_id: int, payload: SaveCardRequest) -> CardDetail | None:
 
         for message in dict.fromkeys(messages):
             connection.execute(
-                "INSERT INTO activity (card_id, message, created_at) VALUES (?, ?, ?)",
-                (card_id, message, _now_text()),
+                "INSERT INTO activity (card_id, actor_user_id, message, created_at) VALUES (?, ?, ?, ?)",
+                (card_id, actor.id, f"{actor.display_name}さんが{message}", _now_text()),
             )
 
     return fetch_card_detail(card_id)
 
 
-def add_comment(card_id: int, payload: AddCommentRequest) -> CardDetail | None:
+def add_comment(card_id: int, payload: AddCommentRequest, actor: AuthUser) -> CardDetail | None:
     with get_connection() as connection:
         exists = connection.execute("SELECT 1 FROM card WHERE id = ?", (card_id,)).fetchone()
         if exists is None:
             return None
 
         connection.execute(
-            "INSERT INTO comment (card_id, author, body, created_at) VALUES (?, ?, ?, ?)",
-            (card_id, payload.author.strip() or "あなた", payload.body.strip(), _now_text()),
+            "INSERT INTO comment (card_id, author_user_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)",
+            (card_id, actor.id, actor.display_name, payload.body.strip(), _now_text()),
         )
         connection.execute(
-            "INSERT INTO activity (card_id, message, created_at) VALUES (?, ?, ?)",
-            (card_id, "コメントを追加しました", _now_text()),
+            "INSERT INTO activity (card_id, actor_user_id, message, created_at) VALUES (?, ?, ?, ?)",
+            (card_id, actor.id, f"{actor.display_name}さんがコメントを追加しました", _now_text()),
+        )
+        connection.execute(
+            "UPDATE card SET updated_by_user_id = ? WHERE id = ?",
+            (actor.id, card_id),
         )
 
     return fetch_card_detail(card_id)
 
 
-def create_card(list_id: int, payload: CreateCardRequest) -> CardDetail | None:
+def create_card(list_id: int, payload: CreateCardRequest, actor: AuthUser) -> CardDetail | None:
     with get_connection() as connection:
         list_row = connection.execute(
             "SELECT title FROM board_list WHERE id = ?",
@@ -502,9 +513,11 @@ def create_card(list_id: int, payload: CreateCardRequest) -> CardDetail | None:
                 customer_name,
                 received_date,
                 notes,
-                history_text
+                history_text,
+                created_by_user_id,
+                updated_by_user_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 list_id,
@@ -517,19 +530,21 @@ def create_card(list_id: int, payload: CreateCardRequest) -> CardDetail | None:
                 _today_text(),
                 "",
                 "",
+                actor.id,
+                actor.id,
             ),
         )
         card_id = cursor.lastrowid
 
         connection.execute(
-            "INSERT INTO activity (card_id, message, created_at) VALUES (?, ?, ?)",
-            (card_id, f"「{list_row['title']}」にカードを作成しました", _now_text()),
+            "INSERT INTO activity (card_id, actor_user_id, message, created_at) VALUES (?, ?, ?, ?)",
+            (card_id, actor.id, f"{actor.display_name}さんが「{list_row['title']}」にカードを作成しました", _now_text()),
         )
 
     return fetch_card_detail(card_id)
 
 
-def set_card_archived(card_id: int, archived: bool) -> CardDetail | None:
+def set_card_archived(card_id: int, archived: bool, actor: AuthUser) -> CardDetail | None:
     with get_connection() as connection:
         card_row = connection.execute(
             """
@@ -558,12 +573,17 @@ def set_card_archived(card_id: int, archived: bool) -> CardDetail | None:
             (int(archived), card_id),
         )
         connection.execute(
-            "INSERT INTO activity (card_id, message, created_at) VALUES (?, ?, ?)",
+            "INSERT INTO activity (card_id, actor_user_id, message, created_at) VALUES (?, ?, ?, ?)",
             (
                 card_id,
-                "アーカイブしました" if archived else "アーカイブを解除しました",
+                actor.id,
+                f"{actor.display_name}さんが" + ("アーカイブしました" if archived else "アーカイブを解除しました"),
                 _now_text(),
             ),
+        )
+        connection.execute(
+            "UPDATE card SET updated_by_user_id = ? WHERE id = ?",
+            (actor.id, card_id),
         )
 
     return fetch_card_detail(card_id)

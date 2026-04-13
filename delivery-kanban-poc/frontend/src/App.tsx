@@ -1,7 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { archiveCard, createCard, fetchBoard, fetchCard, moveCard, unarchiveCard } from "./api";
+import {
+  archiveCard,
+  clearStoredAuthToken,
+  createUser,
+  createCard,
+  fetchBoard,
+  fetchCard,
+  fetchCurrentUser,
+  fetchUsers,
+  getStoredAuthToken,
+  login,
+  moveCard,
+  unarchiveCard,
+} from "./api";
 import { CardModal } from "./components/CardModal";
-import type { BoardList, BoardResponse, CardDetail, CardSummary } from "./types";
+import type { AuthUser, BoardList, BoardResponse, CardDetail, CardSummary } from "./types";
 
 type DragState = {
   cardId: number;
@@ -97,7 +110,13 @@ function getAgedAlert(
   return null;
 }
 
+function isUnauthorizedError(error: unknown) {
+  return error instanceof Error && error.message === "UNAUTHORIZED";
+}
+
 function App() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [board, setBoard] = useState<BoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeCard, setActiveCard] = useState<CardDetail | null>(null);
@@ -113,10 +132,23 @@ function App() {
   const [tableSort, setTableSort] = useState<TableSortMode>("default");
   const [showArchived, setShowArchived] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
+  const [userManageLoading, setUserManageLoading] = useState(false);
+  const [userManageError, setUserManageError] = useState("");
 
   useEffect(() => {
+    void restoreSession();
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setBoard(null);
+      setLoading(false);
+      return;
+    }
     void loadBoard();
-  }, [showArchived]);
+  }, [showArchived, currentUser]);
 
   useEffect(() => {
     const closeMenu = () => setContextMenu(null);
@@ -243,7 +275,11 @@ function App() {
       setError("");
       const data = await fetchBoard(showArchived);
       setBoard(data);
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        return;
+      }
       setError("ボードの取得に失敗しました。バックエンドが起動しているか確認してください。");
     } finally {
       setLoading(false);
@@ -255,7 +291,11 @@ function App() {
       const card = await fetchCard(cardId);
       setActiveCard(card);
       setModalOpen(true);
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        return;
+      }
       setError("カード詳細の取得に失敗しました。");
     }
   };
@@ -277,7 +317,11 @@ function App() {
         const updatedCard = await fetchCard(activeCard.id);
         setActiveCard(updatedCard);
       }
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        return;
+      }
       setError("カード移動に失敗しました。");
     } finally {
       setDragState(null);
@@ -285,9 +329,17 @@ function App() {
   };
 
   const handleCardSaved = async (updatedCard: CardDetail) => {
-    setActiveCard(updatedCard);
-    const updatedBoard = await fetchBoard(showArchived);
-    setBoard(updatedBoard);
+    try {
+      setActiveCard(updatedCard);
+      const updatedBoard = await fetchBoard(showArchived);
+      setBoard(updatedBoard);
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        return;
+      }
+      setError("ボードの再取得に失敗しました。");
+    }
   };
 
   const handleArchiveToggle = async (cardId: number, archived: boolean) => {
@@ -315,7 +367,11 @@ function App() {
           setModalOpen(false);
         }
       }
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        return;
+      }
       setError("アーカイブ操作に失敗しました。");
     }
   };
@@ -350,11 +406,89 @@ function App() {
       setActiveCard(createdCard);
       setModalOpen(true);
     } catch (error) {
-      setError(error instanceof Error ? error.message : "カードの追加に失敗しました。");
+      const message = error instanceof Error ? error.message : "カードの追加に失敗しました。";
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        return;
+      }
+      setError(message);
     } finally {
       setCreatingListId(null);
     }
   };
+
+  const restoreSession = async () => {
+    const token = getStoredAuthToken();
+    if (!token) {
+      setAuthLoading(false);
+      return;
+    }
+
+    try {
+      const me = await fetchCurrentUser();
+      setCurrentUser(me);
+      setError("");
+    } catch {
+      clearStoredAuthToken();
+      setCurrentUser(null);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogin = async (username: string, password: string) => {
+    const user = await login(username, password);
+    setCurrentUser(user);
+    setError("");
+  };
+
+  const handleLogout = () => {
+    clearStoredAuthToken();
+    setCurrentUser(null);
+    setActiveCard(null);
+    setModalOpen(false);
+    setBoard(null);
+    setError("");
+  };
+
+  const loadManagedUsers = async () => {
+    try {
+      setUserManageLoading(true);
+      setUserManageError("");
+      const users = await fetchUsers();
+      setManagedUsers(users);
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        return;
+      }
+      setUserManageError(error instanceof Error ? error.message : "ユーザー一覧の取得に失敗しました。");
+    } finally {
+      setUserManageLoading(false);
+    }
+  };
+
+  const openUserManagement = async () => {
+    setUserModalOpen(true);
+    await loadManagedUsers();
+  };
+
+  const handleCreateManagedUser = async (payload: {
+    username: string;
+    display_name: string;
+    password: string;
+  }) => {
+    await createUser(payload);
+    await loadManagedUsers();
+  };
+
+  if (authLoading) {
+    return <div className="screen-center">認証情報を確認中...</div>;
+  }
+
+  if (!currentUser) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
 
   if (loading) {
     return <div className="screen-center">読み込み中...</div>;
@@ -368,9 +502,20 @@ function App() {
           <h1>{board?.title ?? "納期確認ボード"}</h1>
           <p>案件ごとの確認状況を、カンバンとテーブルの両方で追えるローカルアプリです。</p>
         </div>
-        <button className="secondary-button" onClick={() => void loadBoard()} type="button">
-          再読み込み
-        </button>
+        <div className="hero-actions">
+          <div className="login-user-chip">{currentUser.display_name}</div>
+          {currentUser.username === "admin" ? (
+            <button className="secondary-button" onClick={() => void openUserManagement()} type="button">
+              ユーザー管理
+            </button>
+          ) : null}
+          <button className="secondary-button" onClick={() => void loadBoard()} type="button">
+            再読み込み
+          </button>
+          <button className="ghost-button" onClick={handleLogout} type="button">
+            ログアウト
+          </button>
+        </div>
       </header>
 
       <section className="toolbar">
@@ -516,6 +661,16 @@ function App() {
         </div>
       ) : null}
 
+      <UserManagementModal
+        open={userModalOpen}
+        users={managedUsers}
+        loading={userManageLoading}
+        error={userManageError}
+        onClose={() => setUserModalOpen(false)}
+        onReload={() => void loadManagedUsers()}
+        onCreateUser={(payload) => handleCreateManagedUser(payload)}
+      />
+
       <CardModal
         card={activeCard}
         open={modalOpen}
@@ -524,6 +679,198 @@ function App() {
         onArchiveToggle={(cardId, archived) => void handleArchiveToggle(cardId, archived)}
         statuses={statuses}
       />
+    </div>
+  );
+}
+
+type LoginScreenProps = {
+  onLogin: (username: string, password: string) => Promise<void>;
+};
+
+function LoginScreen({ onLogin }: LoginScreenProps) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!username.trim() || !password) {
+      setError("ユーザー名とパスワードを入力してください。");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+      await onLogin(username.trim(), password);
+    } catch {
+      setError("ログインに失敗しました。ユーザー名またはパスワードを確認してください。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <h1>納期確認カンバン</h1>
+        <p>複数人での操作履歴を残すため、ログインしてください。</p>
+        {error ? <div className="error-banner">{error}</div> : null}
+        <label className="field">
+          <span>ユーザー名</span>
+          <input value={username} onChange={(event) => setUsername(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>パスワード</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void handleSubmit();
+              }
+            }}
+          />
+        </label>
+        <button className="primary-button auth-submit" disabled={loading} onClick={() => void handleSubmit()} type="button">
+          {loading ? "ログイン中..." : "ログイン"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type UserManagementModalProps = {
+  open: boolean;
+  users: AuthUser[];
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+  onReload: () => void;
+  onCreateUser: (payload: { username: string; display_name: string; password: string }) => Promise<void>;
+};
+
+function UserManagementModal({
+  open,
+  users,
+  loading,
+  error,
+  onClose,
+  onReload,
+  onCreateUser,
+}: UserManagementModalProps) {
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  if (!open) {
+    return null;
+  }
+
+  const handleSubmit = async () => {
+    if (!username.trim() || !displayName.trim() || !password) {
+      setFormError("ユーザー名・表示名・パスワードを入力してください。");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setFormError("");
+      await onCreateUser({
+        username: username.trim(),
+        display_name: displayName.trim(),
+        password,
+      });
+      setUsername("");
+      setDisplayName("");
+      setPassword("");
+    } catch (submitError) {
+      setFormError(
+        submitError instanceof Error ? submitError.message : "ユーザー作成に失敗しました。",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="user-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header">
+          <h2>ユーザー管理</h2>
+          <div className="hero-actions">
+            <button className="secondary-button" onClick={onReload} type="button">
+              再取得
+            </button>
+            <button className="ghost-button" onClick={onClose} type="button">
+              閉じる
+            </button>
+          </div>
+        </div>
+
+        {error ? <div className="error-banner">{error}</div> : null}
+        {formError ? <div className="error-banner">{formError}</div> : null}
+
+        <div className="user-list-wrap">
+          {loading ? (
+            <div className="panel-muted">読み込み中...</div>
+          ) : (
+            <table className="user-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>ユーザー名</th>
+                  <th>表示名</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((user) => (
+                  <tr key={user.id}>
+                    <td>{user.id}</td>
+                    <td>{user.username}</td>
+                    <td>{user.display_name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <section className="panel">
+          <h3>ユーザー追加</h3>
+          <div className="row-fields row-fields-3">
+            <label className="field">
+              <span>ユーザー名</span>
+              <input value={username} onChange={(event) => setUsername(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>表示名</span>
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} />
+            </label>
+            <label className="field">
+              <span>パスワード</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void handleSubmit();
+                  }
+                }}
+              />
+            </label>
+          </div>
+          <div className="modal-footer">
+            <button className="primary-button" disabled={saving} onClick={() => void handleSubmit()} type="button">
+              {saving ? "作成中..." : "作成"}
+            </button>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

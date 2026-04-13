@@ -76,10 +76,12 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS comment (
                 id INTEGER PRIMARY KEY,
                 card_id INTEGER NOT NULL,
+                author_user_id INTEGER,
                 author TEXT NOT NULL,
                 body TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE
+                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE,
+                FOREIGN KEY (author_user_id) REFERENCES user_account(id)
             );
 
             CREATE TABLE IF NOT EXISTS checklist_item (
@@ -94,13 +96,33 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS activity (
                 id INTEGER PRIMARY KEY,
                 card_id INTEGER NOT NULL,
+                actor_user_id INTEGER,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE
+                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE,
+                FOREIGN KEY (actor_user_id) REFERENCES user_account(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS user_account (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                password_salt TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_session (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES user_account(id) ON DELETE CASCADE
             );
             """
         )
         migrate_card_table(connection)
+        migrate_audit_tables(connection)
 
         board_count = connection.execute("SELECT COUNT(*) FROM board").fetchone()[0]
         if board_count == 0:
@@ -154,11 +176,27 @@ def migrate_card_table(connection: sqlite3.Connection) -> None:
         "notes": "TEXT NOT NULL DEFAULT ''",
         "history_text": "TEXT NOT NULL DEFAULT ''",
         "archived": "INTEGER NOT NULL DEFAULT 0",
+        "created_by_user_id": "INTEGER",
+        "updated_by_user_id": "INTEGER",
     }
 
     for column_name, column_type in required_columns.items():
         if column_name not in columns:
             connection.execute(f"ALTER TABLE card ADD COLUMN {column_name} {column_type}")
+
+
+def migrate_audit_tables(connection: sqlite3.Connection) -> None:
+    comment_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(comment)").fetchall()
+    }
+    if "author_user_id" not in comment_columns:
+        connection.execute("ALTER TABLE comment ADD COLUMN author_user_id INTEGER")
+
+    activity_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(activity)").fetchall()
+    }
+    if "actor_user_id" not in activity_columns:
+        connection.execute("ALTER TABLE activity ADD COLUMN actor_user_id INTEGER")
 
 
 def seed_database(connection: sqlite3.Connection) -> None:
