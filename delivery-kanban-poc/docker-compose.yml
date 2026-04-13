@@ -5,6 +5,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      TZ: Asia/Tokyo
       KANBAN_DB_PATH: /data/kanban.db
       KANBAN_CORS_ORIGINS: "*"
     volumes:

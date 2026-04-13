@@ -1,10 +1,11 @@
 {
   "app": {
-    "image": ":delivery-kanban-poc.app.3",
+    "image": ":delivery-kanban-poc.app.4",
     "ports": {
       "8000": "HTTP"
     },
     "environment": {
+      "TZ": "Asia/Tokyo",
       "KANBAN_DB_PATH": "/tmp/kanban.db",
       "KANBAN_CORS_ORIGINS": "*",
       "KANBAN_FRONTEND_DIST": "/app/frontend-dist"
