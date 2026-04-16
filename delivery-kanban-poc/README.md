@@ -128,10 +128,18 @@ docker compose up --build
 
 - Lightsail 手順: [docs/aws-lightsail-deploy.md](docs/aws-lightsail-deploy.md)
 - App Runner 補足: [docs/aws-apprunner-note.md](docs/aws-apprunner-note.md)
+- 社内本番移行チェックリスト: [docs/production-migration-checklist.md](docs/production-migration-checklist.md)
 
 ## 補足
 
 SQLite のままでも POC や少人数検証には使えますが、継続運用や同時更新が増える場合は PostgreSQL などへの移行をおすすめします。
+
+## アーカイブ運用
+
+- アーカイブは物理削除ではなく、`card.archived = 1` の論理管理です
+- 通常表示では未アーカイブ案件のみ表示されます
+- 画面上部の `アーカイブ管理を開く` で、アーカイブ済み案件のみを別表示できます
+- アーカイブ管理画面では新規案件追加を無効化しています
 
 ## 今後のタスク（タイムゾーン）
 

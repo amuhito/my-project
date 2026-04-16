@@ -24,6 +24,7 @@ type DragState = {
 type ViewMode = "kanban" | "table";
 type UrgencyFilter = "all" | "overdue" | "with-response-date";
 type TableSortMode = "default" | "requested-due" | "response-due" | "order-no";
+type ArchiveViewMode = "active" | "archived";
 
 type ContextMenuState = {
   x: number;
@@ -130,7 +131,7 @@ function App() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
   const [tableSort, setTableSort] = useState<TableSortMode>("default");
-  const [showArchived, setShowArchived] = useState(false);
+  const [archiveViewMode, setArchiveViewMode] = useState<ArchiveViewMode>("active");
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
@@ -148,7 +149,7 @@ function App() {
       return;
     }
     void loadBoard();
-  }, [showArchived, currentUser]);
+  }, [archiveViewMode, currentUser]);
 
   useEffect(() => {
     const closeMenu = () => setContextMenu(null);
@@ -178,6 +179,14 @@ function App() {
     return board.lists.map((list) => ({
       ...list,
       cards: list.cards.filter((card) => {
+        if (archiveViewMode === "active" && card.archived) {
+          return false;
+        }
+
+        if (archiveViewMode === "archived" && !card.archived) {
+          return false;
+        }
+
         if (statusFilter !== "all" && card.status !== statusFilter) {
           return false;
         }
@@ -209,7 +218,7 @@ function App() {
         return joinedText.includes(normalizedQuery);
       }),
     }));
-  }, [board, searchQuery, statusFilter, urgencyFilter]);
+  }, [board, searchQuery, statusFilter, urgencyFilter, archiveViewMode]);
 
   const flatCards = useMemo(() => {
     const cards = filteredLists.flatMap((list) =>
@@ -273,7 +282,7 @@ function App() {
     try {
       setLoading(true);
       setError("");
-      const data = await fetchBoard(showArchived);
+      const data = await fetchBoard(archiveViewMode === "archived");
       setBoard(data);
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -331,7 +340,7 @@ function App() {
   const handleCardSaved = async (updatedCard: CardDetail) => {
     try {
       setActiveCard(updatedCard);
-      const updatedBoard = await fetchBoard(showArchived);
+      const updatedBoard = await fetchBoard(archiveViewMode === "archived");
       setBoard(updatedBoard);
     } catch (error) {
       if (isUnauthorizedError(error)) {
@@ -356,11 +365,11 @@ function App() {
     try {
       setError("");
       const updatedCard = archived ? await unarchiveCard(cardId) : await archiveCard(cardId);
-      const updatedBoard = await fetchBoard(showArchived);
+      const updatedBoard = await fetchBoard(archiveViewMode === "archived");
       setBoard(updatedBoard);
       setContextMenu(null);
       if (activeCard?.id === cardId) {
-        if (!updatedCard.archived || showArchived) {
+        if (!updatedCard.archived || archiveViewMode === "archived") {
           setActiveCard(updatedCard);
         } else {
           setActiveCard(null);
@@ -397,7 +406,7 @@ function App() {
         title: "",
         project_no: orderNo,
       });
-      const updatedBoard = await fetchBoard(showArchived);
+      const updatedBoard = await fetchBoard(archiveViewMode === "archived");
       setBoard(updatedBoard);
       setNewCardTitles((current) => ({
         ...current,
@@ -571,11 +580,15 @@ function App() {
             <option value="order-no">並び: 受注番号順</option>
           </select>
           <button
-            className={showArchived ? "primary-button" : "ghost-button"}
-            onClick={() => setShowArchived((current) => !current)}
+            className={archiveViewMode === "archived" ? "primary-button" : "ghost-button"}
+            onClick={() =>
+              setArchiveViewMode((current) =>
+                current === "active" ? "archived" : "active",
+              )
+            }
             type="button"
           >
-            {showArchived ? "アーカイブ表示中" : "アーカイブを表示"}
+            {archiveViewMode === "archived" ? "アーカイブ管理中" : "アーカイブ管理を開く"}
           </button>
         </div>
       </section>
@@ -597,6 +610,7 @@ function App() {
               onOpenCard={openCard}
               onStartDrag={setDragState}
               onOpenContextMenu={setContextMenu}
+              archiveViewMode={archiveViewMode}
             />
           ))}
         </main>
@@ -884,6 +898,7 @@ function UserManagementModal({
 type KanbanColumnProps = {
   list: BoardList;
   lookup: Map<number, { listId: number }>;
+  archiveViewMode: ArchiveViewMode;
   creatingListId: number | null;
   newCardTitle: string;
   onChangeNewTitle: (listId: number, title: string) => void;
@@ -897,6 +912,7 @@ type KanbanColumnProps = {
 function KanbanColumn({
   list,
   lookup,
+  archiveViewMode,
   creatingListId,
   newCardTitle,
   onChangeNewTitle,
@@ -994,9 +1010,13 @@ function KanbanColumn({
         <input
           className="add-card-input"
           placeholder="受注番号を入力して案件追加"
+          disabled={archiveViewMode === "archived"}
           value={newCardTitle}
           onChange={(event) => onChangeNewTitle(list.id, event.target.value)}
           onKeyDown={(event) => {
+            if (archiveViewMode === "archived") {
+              return;
+            }
             if (event.key === "Enter") {
               void onCreateCard(list.id);
             }
@@ -1004,7 +1024,7 @@ function KanbanColumn({
         />
         <button
           className="secondary-button add-card-button"
-          disabled={creatingListId === list.id}
+          disabled={creatingListId === list.id || archiveViewMode === "archived"}
           onClick={() => void onCreateCard(list.id)}
           type="button"
         >
