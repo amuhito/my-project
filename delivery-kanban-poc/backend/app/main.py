@@ -10,6 +10,16 @@ from fastapi.staticfiles import StaticFiles
 
 from .auth import AuthUser, authenticate_user, create_session, create_user, ensure_default_user, list_users, resolve_user_by_token
 from .database import initialize_database
+from .inquiry_repository import (
+    confirm_drawing_ready,
+    create_inquiry,
+    fetch_inquiry_detail,
+    fetch_inquiry_item,
+    fetch_inquiry_list,
+    fetch_kanban,
+    move_inquiry_item,
+    update_inquiry_item,
+)
 from .repository import (
     add_comment,
     create_card,
@@ -24,12 +34,19 @@ from .schemas import (
     AuthUserResponse,
     BoardResponse,
     CardDetail,
+    CreateInquiryRequest,
     CreateUserRequest,
     CreateCardRequest,
+    InquiryDetail,
+    InquiryItemDetail,
+    InquiryListResponse,
+    InquiryMoveRequest,
+    KanbanResponse,
     LoginRequest,
     LoginResponse,
     MoveCardRequest,
     SaveCardRequest,
+    UpdateInquiryItemRequest,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -158,6 +175,80 @@ def get_board(
     _: AuthUser = Depends(require_auth_user),
 ) -> BoardResponse:
     return fetch_board(include_archived=include_archived)
+
+
+@app.get("/api/inquiries", response_model=InquiryListResponse)
+def get_inquiries(_: AuthUser = Depends(require_auth_user)) -> InquiryListResponse:
+    return fetch_inquiry_list()
+
+
+@app.post("/api/inquiries", response_model=InquiryDetail)
+def post_inquiry(
+    payload: CreateInquiryRequest,
+    current_user: AuthUser = Depends(require_auth_user),
+) -> InquiryDetail:
+    try:
+        return create_inquiry(payload, current_user)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/inquiries/{inquiry_id}", response_model=InquiryDetail)
+def get_inquiry(inquiry_id: int, _: AuthUser = Depends(require_auth_user)) -> InquiryDetail:
+    inquiry = fetch_inquiry_detail(inquiry_id)
+    if inquiry is None:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    return inquiry
+
+
+@app.get("/api/kanban/items", response_model=KanbanResponse)
+def get_kanban_items(_: AuthUser = Depends(require_auth_user)) -> KanbanResponse:
+    return fetch_kanban()
+
+
+@app.post("/api/inquiry-items/move", response_model=KanbanResponse)
+def post_move_inquiry_item(
+    payload: InquiryMoveRequest,
+    current_user: AuthUser = Depends(require_auth_user),
+) -> KanbanResponse:
+    try:
+        return move_inquiry_item(payload, current_user)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/inquiry-items/{item_id}", response_model=InquiryItemDetail)
+def get_inquiry_item(item_id: int, _: AuthUser = Depends(require_auth_user)) -> InquiryItemDetail:
+    item = fetch_inquiry_item(item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Inquiry item not found")
+    return item
+
+
+@app.put("/api/inquiry-items/{item_id}", response_model=InquiryItemDetail)
+def put_inquiry_item(
+    item_id: int,
+    payload: UpdateInquiryItemRequest,
+    current_user: AuthUser = Depends(require_auth_user),
+) -> InquiryItemDetail:
+    try:
+        item = update_inquiry_item(item_id, payload, current_user)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if item is None:
+        raise HTTPException(status_code=404, detail="Inquiry item not found")
+    return item
+
+
+@app.post("/api/inquiry-items/{item_id}/confirm-drawing", response_model=InquiryItemDetail)
+def post_confirm_drawing(
+    item_id: int,
+    current_user: AuthUser = Depends(require_auth_user),
+) -> InquiryItemDetail:
+    item = confirm_drawing_ready(item_id, current_user)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Inquiry item not found")
+    return item
 
 
 @app.get("/api/cards/{card_id}", response_model=CardDetail)

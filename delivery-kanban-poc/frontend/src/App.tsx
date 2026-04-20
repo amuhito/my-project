@@ -1,138 +1,89 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  archiveCard,
   clearStoredAuthToken,
+  createInquiry,
   createUser,
-  createCard,
-  fetchBoard,
-  fetchCard,
   fetchCurrentUser,
+  fetchInquiry,
+  fetchInquiries,
+  fetchInquiryItem,
+  fetchKanban,
   fetchUsers,
   getStoredAuthToken,
   login,
-  moveCard,
-  unarchiveCard,
+  moveInquiryItem,
 } from "./api";
-import { CardModal } from "./components/CardModal";
-import type { AuthUser, BoardList, BoardResponse, CardDetail, CardSummary } from "./types";
+import { InquiryItemModal } from "./components/InquiryItemModal";
+import type {
+  AuthUser,
+  InquiryDetail,
+  InquiryItemDetail,
+  InquiryItemSummary,
+  InquirySummary,
+  KanbanColumn,
+} from "./types";
+
+type PageMode = "inquiries" | "new-inquiry" | "inquiry-detail" | "kanban";
 
 type DragState = {
-  cardId: number;
-  sourceListId: number;
+  itemId: number;
+  sourceProcess: InquiryItemSummary["process"];
 };
-
-type ViewMode = "kanban" | "table";
-type UrgencyFilter = "all" | "overdue" | "with-response-date";
-type TableSortMode = "default" | "requested-due" | "response-due" | "order-no";
-type ArchiveViewMode = "active" | "archived";
-
-type ContextMenuState = {
-  x: number;
-  y: number;
-  card: CardSummary;
-};
-
-const ARCHIVABLE_STATUS = "１次対応完了";
-
-function todayText() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function canArchiveCard(card: Pick<CardSummary, "archived" | "status" | "requested_due_date">) {
-  if (card.archived) {
-    return true;
-  }
-
-  return card.status === ARCHIVABLE_STATUS && !!card.requested_due_date && card.requested_due_date < todayText();
-}
-
-function countBusinessDaysSince(dateText: string) {
-  const baseDate = new Date(`${dateText.slice(0, 10)}T00:00:00`);
-  const today = new Date(`${todayText()}T00:00:00`);
-
-  if (Number.isNaN(baseDate.getTime()) || baseDate >= today) {
-    return 0;
-  }
-
-  let businessDays = 0;
-  const current = new Date(baseDate);
-  current.setDate(current.getDate() + 1);
-
-  while (current < today) {
-    const day = current.getDay();
-    if (day !== 0 && day !== 6) {
-      businessDays += 1;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-
-  return businessDays;
-}
-
-function toAlertLevel(diffDays: number) {
-  if (diffDays >= 2) {
-    return 2;
-  }
-  if (diffDays >= 1) {
-    return 1;
-  }
-  return 0;
-}
-
-function getAgedAlert(
-  card: Pick<CardSummary, "archived" | "status" | "received_date" | "latest_activity_at">,
-) {
-  if (card.archived) {
-    return null;
-  }
-
-  const activityLevel = card.latest_activity_at
-    ? toAlertLevel(countBusinessDaysSince(card.latest_activity_at))
-    : 0;
-  const receivedLevel =
-    card.status === "未対応" && card.received_date
-      ? toAlertLevel(countBusinessDaysSince(card.received_date))
-      : 0;
-
-  if (receivedLevel >= activityLevel && receivedLevel > 0) {
-    return {
-      level: receivedLevel,
-      label: receivedLevel >= 2 ? "未対応2営業日以上経過" : "未対応1営業日経過",
-    };
-  }
-
-  if (activityLevel > 0) {
-    return {
-      level: activityLevel,
-      label: activityLevel >= 2 ? "2営業日以上経過" : "1営業日経過",
-    };
-  }
-
-  return null;
-}
 
 function isUnauthorizedError(error: unknown) {
   return error instanceof Error && error.message === "UNAUTHORIZED";
 }
 
+function formatDateText(value: string | null) {
+  if (!value) {
+    return "-";
+  }
+  return value.slice(0, 10);
+}
+
+function toShortCustomerName(value: string) {
+  if (value.length <= 12) {
+    return value;
+  }
+  return `${value.slice(0, 12)}…`;
+}
+
+function normalizeKanbanColumns(columns: KanbanColumn[]): KanbanColumn[] {
+  const visibleColumns = columns
+    .filter((column) => column.process !== "sales_registered")
+    .map((column) => ({
+      ...column,
+      items: [...column.items],
+    }));
+  const salesRegisteredItems =
+    columns.find((column) => column.process === "sales_registered")?.items ?? [];
+  if (salesRegisteredItems.length === 0) {
+    return visibleColumns;
+  }
+
+  const notDrawnColumn = visibleColumns.find((column) => column.process === "not_drawn");
+  if (!notDrawnColumn) {
+    return visibleColumns;
+  }
+  notDrawnColumn.items = [...salesRegisteredItems, ...notDrawnColumn.items];
+  return visibleColumns;
+}
+
 function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [board, setBoard] = useState<BoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeCard, setActiveCard] = useState<CardDetail | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [dragState, setDragState] = useState<DragState | null>(null);
   const [error, setError] = useState("");
-  const [newCardTitles, setNewCardTitles] = useState<Record<number, string>>({});
-  const [creatingListId, setCreatingListId] = useState<number | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>("kanban");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [urgencyFilter, setUrgencyFilter] = useState<UrgencyFilter>("all");
-  const [tableSort, setTableSort] = useState<TableSortMode>("default");
-  const [archiveViewMode, setArchiveViewMode] = useState<ArchiveViewMode>("active");
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  const [pageMode, setPageMode] = useState<PageMode>("inquiries");
+  const [inquiries, setInquiries] = useState<InquirySummary[]>([]);
+  const [inquiryDetail, setInquiryDetail] = useState<InquiryDetail | null>(null);
+  const [kanbanColumns, setKanbanColumns] = useState<KanbanColumn[]>([]);
+  const [dragState, setDragState] = useState<DragState | null>(null);
+
+  const [activeItem, setActiveItem] = useState<InquiryItemDetail | null>(null);
+  const [itemModalOpen, setItemModalOpen] = useState(false);
+
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
   const [userManageLoading, setUserManageLoading] = useState(false);
@@ -144,287 +95,21 @@ function App() {
 
   useEffect(() => {
     if (!currentUser) {
-      setBoard(null);
       setLoading(false);
       return;
     }
-    void loadBoard();
-  }, [archiveViewMode, currentUser]);
+    void loadBaseData();
+  }, [currentUser]);
 
-  useEffect(() => {
-    const closeMenu = () => setContextMenu(null);
-    window.addEventListener("click", closeMenu);
-    return () => window.removeEventListener("click", closeMenu);
-  }, []);
-
-  const statuses = useMemo(() => board?.lists.map((list) => list.title) ?? [], [board]);
-
-  const cardLookup = useMemo(() => {
-    const map = new Map<number, { listId: number }>();
-    board?.lists.forEach((list) => {
-      list.cards.forEach((card) => {
-        map.set(card.id, { listId: list.id });
+  const kanbanLookup = useMemo(() => {
+    const map = new Map<number, InquiryItemSummary["process"]>();
+    kanbanColumns.forEach((column) => {
+      column.items.forEach((item) => {
+        map.set(item.id, item.process);
       });
     });
     return map;
-  }, [board]);
-
-  const filteredLists = useMemo(() => {
-    if (!board) {
-      return [];
-    }
-
-    const today = new Date().toISOString().slice(0, 10);
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-    return board.lists.map((list) => ({
-      ...list,
-      cards: list.cards.filter((card) => {
-        if (archiveViewMode === "active" && card.archived) {
-          return false;
-        }
-
-        if (archiveViewMode === "archived" && !card.archived) {
-          return false;
-        }
-
-        if (statusFilter !== "all" && card.status !== statusFilter) {
-          return false;
-        }
-
-        if (urgencyFilter === "overdue") {
-          if (!card.response_due_date || card.response_due_date >= today) {
-            return false;
-          }
-        }
-
-        if (urgencyFilter === "with-response-date" && !card.response_due_date) {
-          return false;
-        }
-
-        if (!normalizedQuery) {
-          return true;
-        }
-
-        const joinedText = [
-          card.project_no,
-          card.customer_name,
-          card.assignee_name,
-          card.notes,
-          card.title,
-        ]
-          .join(" ")
-          .toLowerCase();
-
-        return joinedText.includes(normalizedQuery);
-      }),
-    }));
-  }, [board, searchQuery, statusFilter, urgencyFilter, archiveViewMode]);
-
-  const flatCards = useMemo(() => {
-    const cards = filteredLists.flatMap((list) =>
-      list.cards.map((card, index) => ({
-        ...card,
-        listId: list.id,
-        listTitle: list.title,
-        originalIndex: index,
-        listPosition: list.position,
-      })),
-    );
-
-    if (tableSort === "default") {
-      return cards;
-    }
-
-    const compareDate = (left: string | null, right: string | null) => {
-      if (left && right) {
-        return left.localeCompare(right);
-      }
-      if (left) {
-        return -1;
-      }
-      if (right) {
-        return 1;
-      }
-      return 0;
-    };
-
-    const compareFallback = (
-      left: { listPosition: number; originalIndex: number },
-      right: { listPosition: number; originalIndex: number },
-    ) => {
-      if (left.listPosition !== right.listPosition) {
-        return left.listPosition - right.listPosition;
-      }
-      return left.originalIndex - right.originalIndex;
-    };
-
-    return [...cards].sort((left, right) => {
-      if (tableSort === "requested-due") {
-        const result = compareDate(left.requested_due_date, right.requested_due_date);
-        return result !== 0 ? result : compareFallback(left, right);
-      }
-
-      if (tableSort === "response-due") {
-        const result = compareDate(left.response_due_date, right.response_due_date);
-        return result !== 0 ? result : compareFallback(left, right);
-      }
-
-      const orderResult = (left.project_no || "").localeCompare(
-        right.project_no || "",
-        "ja",
-        { numeric: true },
-      );
-      return orderResult !== 0 ? orderResult : compareFallback(left, right);
-    });
-  }, [filteredLists, tableSort]);
-
-  const loadBoard = async () => {
-    try {
-      setLoading(true);
-      setError("");
-      const data = await fetchBoard(archiveViewMode === "archived");
-      setBoard(data);
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        handleLogout();
-        return;
-      }
-      setError("ボードの取得に失敗しました。バックエンドが起動しているか確認してください。");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const openCard = async (cardId: number) => {
-    try {
-      const card = await fetchCard(cardId);
-      setActiveCard(card);
-      setModalOpen(true);
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        handleLogout();
-        return;
-      }
-      setError("カード詳細の取得に失敗しました。");
-    }
-  };
-
-  const handleDrop = async (destinationListId: number, destinationIndex: number) => {
-    if (!dragState) {
-      return;
-    }
-
-    try {
-      const updatedBoard = await moveCard({
-        card_id: dragState.cardId,
-        source_list_id: dragState.sourceListId,
-        destination_list_id: destinationListId,
-        destination_index: destinationIndex,
-      });
-      setBoard(updatedBoard);
-      if (activeCard && activeCard.id === dragState.cardId) {
-        const updatedCard = await fetchCard(activeCard.id);
-        setActiveCard(updatedCard);
-      }
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        handleLogout();
-        return;
-      }
-      setError("カード移動に失敗しました。");
-    } finally {
-      setDragState(null);
-    }
-  };
-
-  const handleCardSaved = async (updatedCard: CardDetail) => {
-    try {
-      setActiveCard(updatedCard);
-      const updatedBoard = await fetchBoard(archiveViewMode === "archived");
-      setBoard(updatedBoard);
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        handleLogout();
-        return;
-      }
-      setError("ボードの再取得に失敗しました。");
-    }
-  };
-
-  const handleArchiveToggle = async (cardId: number, archived: boolean) => {
-    const targetCard =
-      board?.lists.flatMap((list) => list.cards).find((card) => card.id === cardId) ??
-      (activeCard && activeCard.id === cardId ? activeCard : null);
-
-    if (!archived && targetCard && !canArchiveCard(targetCard)) {
-      setError("アーカイブできるのは「１次対応完了」かつ希望納期を過ぎた案件だけです。");
-      setContextMenu(null);
-      return;
-    }
-
-    try {
-      setError("");
-      const updatedCard = archived ? await unarchiveCard(cardId) : await archiveCard(cardId);
-      const updatedBoard = await fetchBoard(archiveViewMode === "archived");
-      setBoard(updatedBoard);
-      setContextMenu(null);
-      if (activeCard?.id === cardId) {
-        if (!updatedCard.archived || archiveViewMode === "archived") {
-          setActiveCard(updatedCard);
-        } else {
-          setActiveCard(null);
-          setModalOpen(false);
-        }
-      }
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
-        handleLogout();
-        return;
-      }
-      setError("アーカイブ操作に失敗しました。");
-    }
-  };
-
-  const handleNewCardTitleChange = (listId: number, title: string) => {
-    setNewCardTitles((current) => ({
-      ...current,
-      [listId]: title,
-    }));
-  };
-
-  const handleCreateCard = async (listId: number) => {
-    const orderNo = newCardTitles[listId]?.trim() ?? "";
-    if (!orderNo) {
-      setError("受注番号を入力してください。");
-      return;
-    }
-
-    try {
-      setCreatingListId(listId);
-      setError("");
-      const createdCard = await createCard(listId, {
-        title: "",
-        project_no: orderNo,
-      });
-      const updatedBoard = await fetchBoard(archiveViewMode === "archived");
-      setBoard(updatedBoard);
-      setNewCardTitles((current) => ({
-        ...current,
-        [listId]: "",
-      }));
-      setActiveCard(createdCard);
-      setModalOpen(true);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "カードの追加に失敗しました。";
-      if (isUnauthorizedError(error)) {
-        handleLogout();
-        return;
-      }
-      setError(message);
-    } finally {
-      setCreatingListId(null);
-    }
-  };
+  }, [kanbanColumns]);
 
   const restoreSession = async () => {
     const token = getStoredAuthToken();
@@ -445,6 +130,24 @@ function App() {
     }
   };
 
+  const loadBaseData = async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const [inquiryList, kanban] = await Promise.all([fetchInquiries(), fetchKanban()]);
+      setInquiries(inquiryList.inquiries);
+      setKanbanColumns(normalizeKanbanColumns(kanban.columns));
+    } catch (loadError) {
+      if (isUnauthorizedError(loadError)) {
+        handleLogout();
+        return;
+      }
+      setError("データ取得に失敗しました。バックエンド起動状態を確認してください。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleLogin = async (username: string, password: string) => {
     const user = await login(username, password);
     setCurrentUser(user);
@@ -454,10 +157,78 @@ function App() {
   const handleLogout = () => {
     clearStoredAuthToken();
     setCurrentUser(null);
-    setActiveCard(null);
-    setModalOpen(false);
-    setBoard(null);
+    setPageMode("inquiries");
+    setInquiryDetail(null);
+    setItemModalOpen(false);
+    setActiveItem(null);
     setError("");
+  };
+
+  const openInquiryDetail = async (inquiryId: number) => {
+    try {
+      setError("");
+      const detail = await fetchInquiry(inquiryId);
+      setInquiryDetail(detail);
+      setPageMode("inquiry-detail");
+    } catch (loadError) {
+      if (isUnauthorizedError(loadError)) {
+        handleLogout();
+        return;
+      }
+      setError("問い合わせ詳細の取得に失敗しました。");
+    }
+  };
+
+  const openItemModal = async (itemId: number) => {
+    try {
+      setError("");
+      const detail = await fetchInquiryItem(itemId);
+      setActiveItem(detail);
+      setItemModalOpen(true);
+    } catch (loadError) {
+      if (isUnauthorizedError(loadError)) {
+        handleLogout();
+        return;
+      }
+      setError("子案件の取得に失敗しました。");
+    }
+  };
+
+  const handleItemSaved = async (updatedItem: InquiryItemDetail) => {
+    setActiveItem(updatedItem);
+    setItemModalOpen(false);
+    await loadBaseData();
+    if (inquiryDetail) {
+      await openInquiryDetail(inquiryDetail.id);
+    }
+  };
+
+  const handleDrop = async (destinationProcess: InquiryItemSummary["process"], destinationIndex: number) => {
+    if (!dragState) {
+      return;
+    }
+
+    try {
+      setError("");
+      const updated = await moveInquiryItem({
+        item_id: dragState.itemId,
+        destination_process: destinationProcess,
+        destination_index: destinationIndex,
+      });
+      setKanbanColumns(normalizeKanbanColumns(updated.columns));
+      if (inquiryDetail) {
+        const refreshed = await fetchInquiry(inquiryDetail.id);
+        setInquiryDetail(refreshed);
+      }
+    } catch (moveError) {
+      if (isUnauthorizedError(moveError)) {
+        handleLogout();
+        return;
+      }
+      setError(moveError instanceof Error ? moveError.message : "移動に失敗しました。");
+    } finally {
+      setDragState(null);
+    }
   };
 
   const loadManagedUsers = async () => {
@@ -466,12 +237,12 @@ function App() {
       setUserManageError("");
       const users = await fetchUsers();
       setManagedUsers(users);
-    } catch (error) {
-      if (isUnauthorizedError(error)) {
+    } catch (loadError) {
+      if (isUnauthorizedError(loadError)) {
         handleLogout();
         return;
       }
-      setUserManageError(error instanceof Error ? error.message : "ユーザー一覧の取得に失敗しました。");
+      setUserManageError(loadError instanceof Error ? loadError.message : "ユーザー一覧の取得に失敗しました。");
     } finally {
       setUserManageLoading(false);
     }
@@ -507,9 +278,9 @@ function App() {
     <div className="app-shell">
       <header className="hero">
         <div>
-          <div className="hero-badge">納期確認 POC</div>
-          <h1>{board?.title ?? "納期確認ボード"}</h1>
-          <p>案件ごとの確認状況を、カンバンとテーブルの両方で追えるローカルアプリです。</p>
+          <div className="hero-badge">フェーズ1-A</div>
+          <h1>納期管理カンバン</h1>
+          <p>親: 問い合わせ / 子: 案件（P/E/S）で管理します。</p>
         </div>
         <div className="hero-actions">
           <div className="login-user-chip">{currentUser.display_name}</div>
@@ -518,7 +289,7 @@ function App() {
               ユーザー管理
             </button>
           ) : null}
-          <button className="secondary-button" onClick={() => void loadBoard()} type="button">
+          <button className="secondary-button" onClick={() => void loadBaseData()} type="button">
             再読み込み
           </button>
           <button className="ghost-button" onClick={handleLogout} type="button">
@@ -527,158 +298,59 @@ function App() {
         </div>
       </header>
 
-      <section className="toolbar">
-        <div className="toolbar-group">
-          <button
-            className={viewMode === "kanban" ? "primary-button" : "ghost-button"}
-            onClick={() => setViewMode("kanban")}
-            type="button"
-          >
-            カンバン
-          </button>
-          <button
-            className={viewMode === "table" ? "primary-button" : "ghost-button"}
-            onClick={() => setViewMode("table")}
-            type="button"
-          >
-            テーブル
-          </button>
-        </div>
-        <div className="toolbar-filters">
-          <label className="search-box">
-            <span className="search-label">検索</span>
-            <input
-              className="toolbar-input"
-              placeholder="受注番号、ユーザー様、確認先、備考で検索"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </label>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="all">全ステータス</option>
-            {statuses.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-          <select
-            value={urgencyFilter}
-            onChange={(event) => setUrgencyFilter(event.target.value as UrgencyFilter)}
-          >
-            <option value="all">すべて</option>
-            <option value="with-response-date">回答納期あり</option>
-            <option value="overdue">回答納期切れ</option>
-          </select>
-          <select
-            value={tableSort}
-            onChange={(event) => setTableSort(event.target.value as TableSortMode)}
-          >
-            <option value="default">並び: 既定順</option>
-            <option value="requested-due">並び: 希望納期順</option>
-            <option value="response-due">並び: 回答納期順</option>
-            <option value="order-no">並び: 受注番号順</option>
-          </select>
-          <button
-            className={archiveViewMode === "archived" ? "primary-button" : "ghost-button"}
-            onClick={() =>
-              setArchiveViewMode((current) =>
-                current === "active" ? "archived" : "active",
-              )
-            }
-            type="button"
-          >
-            {archiveViewMode === "archived" ? "アーカイブ管理中" : "アーカイブ管理を開く"}
-          </button>
-        </div>
-      </section>
+      <nav className="page-tabs">
+        <button
+          className={pageMode === "inquiries" ? "primary-button" : "ghost-button"}
+          onClick={() => setPageMode("inquiries")}
+          type="button"
+        >
+          問い合わせ一覧
+        </button>
+        <button
+          className={pageMode === "new-inquiry" ? "primary-button" : "ghost-button"}
+          onClick={() => setPageMode("new-inquiry")}
+          type="button"
+        >
+          新規問い合わせ
+        </button>
+        <button
+          className={pageMode === "kanban" ? "primary-button" : "ghost-button"}
+          onClick={() => setPageMode("kanban")}
+          type="button"
+        >
+          子案件カンバン
+        </button>
+      </nav>
 
       {error ? <div className="error-banner">{error}</div> : null}
 
-      {viewMode === "kanban" ? (
-        <main className="board">
-          {filteredLists.map((list) => (
-            <KanbanColumn
-              key={list.id}
-              list={list}
-              lookup={cardLookup}
-              creatingListId={creatingListId}
-              newCardTitle={newCardTitles[list.id] ?? ""}
-              onChangeNewTitle={handleNewCardTitleChange}
-              onCreateCard={handleCreateCard}
-              onDrop={handleDrop}
-              onOpenCard={openCard}
-              onStartDrag={setDragState}
-              onOpenContextMenu={setContextMenu}
-              archiveViewMode={archiveViewMode}
-            />
-          ))}
-        </main>
-      ) : (
-        <section className="table-panel">
-          <div className="table-scroll">
-            <table className="case-table">
-              <thead>
-                <tr>
-                  <th>日付</th>
-                  <th>受注番号</th>
-                  <th>ユーザー様</th>
-                  <th>ステータス</th>
-                  <th>希望納期</th>
-                  <th>確認先</th>
-                  <th>回答納期</th>
-                  <th>最短◎発送日</th>
-                  <th>備考（理由）</th>
-                </tr>
-              </thead>
-              <tbody>
-                {flatCards.map((card) => (
-                  <tr key={card.id} onClick={() => void openCard(card.id)}>
-                    <td>{card.received_date ?? "-"}</td>
-                    <td>{card.project_no || "-"}</td>
-                    <td>{card.customer_name || card.title}</td>
-                    <td>
-                      {card.archived
-                        ? "アーカイブ済み"
-                        : canArchiveCard(card)
-                          ? `${card.status}（アーカイブ可能）`
-                          : card.status}
-                    </td>
-                    <td>{card.requested_due_date ?? "-"}</td>
-                    <td>{card.assignee_name || "-"}</td>
-                    <td>{card.response_due_date ?? "-"}</td>
-                    <td>{card.earliest_ship_date ?? "-"}</td>
-                    <td>{card.notes || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
+      {pageMode === "inquiries" ? (
+        <InquiryListSection inquiries={inquiries} onOpenDetail={(inquiryId) => void openInquiryDetail(inquiryId)} />
+      ) : null}
 
-      {contextMenu ? (
-        <div
-          className="context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <button
-            className="context-menu-item"
-            onClick={() => void openCard(contextMenu.card.id)}
-            type="button"
-          >
-            カードを開く
-          </button>
-          <button
-            className="context-menu-item danger"
-            disabled={!canArchiveCard(contextMenu.card)}
-            onClick={() => void handleArchiveToggle(contextMenu.card.id, contextMenu.card.archived)}
-            type="button"
-          >
-            {contextMenu.card.archived ? "アーカイブ解除" : "アーカイブ"}
-          </button>
-        </div>
+      {pageMode === "new-inquiry" ? (
+        <InquiryCreateSection
+          onCreated={async (detail) => {
+            await loadBaseData();
+            setInquiryDetail(detail);
+            setPageMode("inquiry-detail");
+          }}
+          onError={(message) => setError(message)}
+        />
+      ) : null}
+
+      {pageMode === "inquiry-detail" && inquiryDetail ? (
+        <InquiryDetailSection inquiry={inquiryDetail} onEditItem={(itemId) => void openItemModal(itemId)} />
+      ) : null}
+
+      {pageMode === "kanban" ? (
+        <KanbanSection
+          columns={kanbanColumns}
+          lookup={kanbanLookup}
+          onDrop={handleDrop}
+          onOpenItem={(itemId) => void openItemModal(itemId)}
+          onStartDrag={setDragState}
+        />
       ) : null}
 
       <UserManagementModal
@@ -691,15 +363,314 @@ function App() {
         onCreateUser={(payload) => handleCreateManagedUser(payload)}
       />
 
-      <CardModal
-        card={activeCard}
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSaved={(updatedCard) => void handleCardSaved(updatedCard)}
-        onArchiveToggle={(cardId, archived) => void handleArchiveToggle(cardId, archived)}
-        statuses={statuses}
+      <InquiryItemModal
+        item={activeItem}
+        open={itemModalOpen}
+        onClose={() => setItemModalOpen(false)}
+        onSaved={(updated) => void handleItemSaved(updated)}
       />
     </div>
+  );
+}
+
+type InquiryListSectionProps = {
+  inquiries: InquirySummary[];
+  onOpenDetail: (inquiryId: number) => void;
+};
+
+function InquiryListSection({ inquiries, onOpenDetail }: InquiryListSectionProps) {
+  return (
+    <section className="table-panel">
+      <table className="case-table">
+        <thead>
+          <tr>
+            <th>問い合わせID</th>
+            <th>納入先</th>
+            <th>希望納期</th>
+            <th>依頼内容</th>
+            <th>案件件数</th>
+            <th>作成日</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {inquiries.map((inquiry) => (
+            <tr key={inquiry.id}>
+              <td>{inquiry.display_id}</td>
+              <td>{inquiry.customer_name}</td>
+              <td>{inquiry.requested_due_display}</td>
+              <td>{inquiry.request_kind_label}</td>
+              <td>{inquiry.item_count}</td>
+              <td>{formatDateText(inquiry.created_at)}</td>
+              <td>
+                <button className="secondary-button" onClick={() => onOpenDetail(inquiry.id)} type="button">
+                  詳細
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+type InquiryCreateSectionProps = {
+  onCreated: (detail: InquiryDetail) => Promise<void>;
+  onError: (message: string) => void;
+};
+
+function InquiryCreateSection({ onCreated, onError }: InquiryCreateSectionProps) {
+  const [customerName, setCustomerName] = useState("");
+  const [orderNos, setOrderNos] = useState("");
+  const [requestedDueType, setRequestedDueType] = useState<"shortest" | "specific">("shortest");
+  const [requestedDueDate, setRequestedDueDate] = useState("");
+  const [requestKind, setRequestKind] = useState<"confirm" | "shorten">("confirm");
+  const [remarks, setRemarks] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  const submit = async () => {
+    if (!customerName.trim()) {
+      setLocalError("納入先は必須です。");
+      return;
+    }
+    if (!orderNos.trim()) {
+      setLocalError("受注Noは必須です。");
+      return;
+    }
+    if (requestedDueType === "specific" && !requestedDueDate) {
+      setLocalError("指定日の場合は日付を入力してください。");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setLocalError("");
+      onError("");
+      const created = await createInquiry({
+        customer_name: customerName,
+        order_nos: orderNos,
+        requested_due_type: requestedDueType,
+        requested_due_date: requestedDueType === "specific" ? requestedDueDate : null,
+        request_kind: requestKind,
+        remarks,
+      });
+      await onCreated(created);
+      setCustomerName("");
+      setOrderNos("");
+      setRequestedDueType("shortest");
+      setRequestedDueDate("");
+      setRequestKind("confirm");
+      setRemarks("");
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : "問い合わせ作成に失敗しました。";
+      setLocalError(message);
+      onError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="panel create-panel">
+      <h2>新規問い合わせ作成</h2>
+      {localError ? <div className="error-banner">{localError}</div> : null}
+      <div className="row-fields row-fields-2">
+        <label className="field">
+          <span>納入先（必須）</span>
+          <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+        </label>
+        <label className="field">
+          <span>依頼内容</span>
+          <select value={requestKind} onChange={(event) => setRequestKind(event.target.value as "confirm" | "shorten")}>
+            <option value="confirm">納期確認</option>
+            <option value="shorten">納期短縮</option>
+          </select>
+        </label>
+      </div>
+
+      <label className="field">
+        <span>受注No（必須・複数可）</span>
+        <textarea
+          rows={6}
+          placeholder={"P-61057\nE-12345,S-99881\nP-61057～63"}
+          value={orderNos}
+          onChange={(event) => setOrderNos(event.target.value)}
+        />
+      </label>
+
+      <div className="row-fields row-fields-2">
+        <label className="field">
+          <span>希望納期種別</span>
+          <select
+            value={requestedDueType}
+            onChange={(event) => setRequestedDueType(event.target.value as "shortest" | "specific")}
+          >
+            <option value="shortest">最短</option>
+            <option value="specific">指定日</option>
+          </select>
+        </label>
+        {requestedDueType === "specific" ? (
+          <label className="field">
+            <span>希望納期（日付）</span>
+            <input
+              type="date"
+              value={requestedDueDate}
+              onChange={(event) => setRequestedDueDate(event.target.value)}
+            />
+          </label>
+        ) : (
+          <div />
+        )}
+      </div>
+
+      <label className="field">
+        <span>備考</span>
+        <textarea rows={4} value={remarks} onChange={(event) => setRemarks(event.target.value)} />
+      </label>
+
+      <div className="modal-footer">
+        <button className="primary-button" disabled={saving} onClick={() => void submit()} type="button">
+          {saving ? "作成中..." : "問い合わせを作成"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+type InquiryDetailSectionProps = {
+  inquiry: InquiryDetail;
+  onEditItem: (itemId: number) => void;
+};
+
+function InquiryDetailSection({ inquiry, onEditItem }: InquiryDetailSectionProps) {
+  return (
+    <section className="panel">
+      <h2>問い合わせ詳細 {inquiry.display_id}</h2>
+      <div className="detail-grid">
+        <div>
+          <strong>納入先:</strong> {inquiry.customer_name}
+        </div>
+        <div>
+          <strong>希望納期:</strong> {inquiry.requested_due_display}
+        </div>
+        <div>
+          <strong>依頼内容:</strong> {inquiry.request_kind_label}
+        </div>
+        <div>
+          <strong>作成日:</strong> {formatDateText(inquiry.created_at)}
+        </div>
+        <div className="detail-wide">
+          <strong>備考:</strong> {inquiry.remarks || "-"}
+        </div>
+      </div>
+
+      <h3>子案件一覧</h3>
+      <table className="case-table">
+        <thead>
+          <tr>
+            <th>種別</th>
+            <th>番号</th>
+            <th>工程</th>
+            <th>担当</th>
+            <th>希望納期</th>
+            <th>確定納期</th>
+            <th>状態</th>
+            <th>更新日</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {inquiry.items.map((item) => (
+            <tr key={item.id}>
+              <td>{item.item_type}</td>
+              <td>{item.item_no}</td>
+              <td>{item.process_label}</td>
+              <td>{item.owner || "-"}</td>
+              <td>{inquiry.requested_due_display}</td>
+              <td>{formatDateText(item.confirmed_shipping_date)}</td>
+              <td>{item.state_label}</td>
+              <td>{formatDateText(item.updated_at)}</td>
+              <td>
+                <button className="secondary-button" onClick={() => onEditItem(item.id)} type="button">
+                  編集
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+type KanbanSectionProps = {
+  columns: KanbanColumn[];
+  lookup: Map<number, InquiryItemSummary["process"]>;
+  onDrop: (destinationProcess: InquiryItemSummary["process"], destinationIndex: number) => Promise<void>;
+  onOpenItem: (itemId: number) => void;
+  onStartDrag: (state: DragState) => void;
+};
+
+function KanbanSection({ columns, lookup, onDrop, onOpenItem, onStartDrag }: KanbanSectionProps) {
+  return (
+    <main className="board board-6">
+      {columns.map((column) => (
+        <section
+          key={column.process}
+          className="list-column"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={() => void onDrop(column.process, column.items.length)}
+        >
+          <div className="list-header">
+            <h2>{column.label}</h2>
+            <span>{column.items.length} 件</span>
+          </div>
+
+          <div className="card-list">
+            {column.items.map((item, index) => (
+              <article
+                className="card-tile"
+                draggable
+                key={item.id}
+                onClick={() => onOpenItem(item.id)}
+                onDragStart={() =>
+                  onStartDrag({
+                    itemId: item.id,
+                    sourceProcess: lookup.get(item.id) ?? item.process,
+                  })
+                }
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void onDrop(column.process, index);
+                }}
+              >
+                <div className="card-topline">
+                  <span className="label-chip type-chip">{item.item_type}</span>
+                  <span className="card-order-no">{item.item_no}</span>
+                </div>
+                <div className="label-row">
+                  <span className={`label-chip ${item.request_kind === "shorten" ? "danger-chip" : "info-chip"}`}>
+                    {item.request_kind_label}
+                  </span>
+                </div>
+                <h3 className="card-customer-name">{toShortCustomerName(item.customer_name)}</h3>
+                <div className="meta-row">
+                  <span>担当: {item.owner || "未設定"}</span>
+                  <span>希望納期: {item.requested_due_display}</span>
+                </div>
+                <div className="meta-row">
+                  <span>状態: {item.state_label}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ))}
+    </main>
   );
 }
 
@@ -733,8 +704,8 @@ function LoginScreen({ onLogin }: LoginScreenProps) {
   return (
     <div className="auth-screen">
       <div className="auth-card">
-        <h1>納期確認カンバン</h1>
-        <p>複数人での操作履歴を残すため、ログインしてください。</p>
+        <h1>納期管理カンバン</h1>
+        <p>ログインしてください。</p>
         {error ? <div className="error-banner">{error}</div> : null}
         <label className="field">
           <span>ユーザー名</span>
@@ -808,9 +779,7 @@ function UserManagementModal({
       setDisplayName("");
       setPassword("");
     } catch (submitError) {
-      setFormError(
-        submitError instanceof Error ? submitError.message : "ユーザー作成に失敗しました。",
-      );
+      setFormError(submitError instanceof Error ? submitError.message : "ユーザー作成に失敗しました。");
     } finally {
       setSaving(false);
     }
@@ -892,146 +861,6 @@ function UserManagementModal({
         </section>
       </div>
     </div>
-  );
-}
-
-type KanbanColumnProps = {
-  list: BoardList;
-  lookup: Map<number, { listId: number }>;
-  archiveViewMode: ArchiveViewMode;
-  creatingListId: number | null;
-  newCardTitle: string;
-  onChangeNewTitle: (listId: number, title: string) => void;
-  onCreateCard: (listId: number) => Promise<void>;
-  onDrop: (destinationListId: number, destinationIndex: number) => Promise<void>;
-  onOpenCard: (cardId: number) => Promise<void>;
-  onStartDrag: (state: DragState) => void;
-  onOpenContextMenu: (menu: ContextMenuState | null) => void;
-};
-
-function KanbanColumn({
-  list,
-  lookup,
-  archiveViewMode,
-  creatingListId,
-  newCardTitle,
-  onChangeNewTitle,
-  onCreateCard,
-  onDrop,
-  onOpenCard,
-  onStartDrag,
-  onOpenContextMenu,
-}: KanbanColumnProps) {
-  return (
-    <section
-      className="list-column"
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={() => void onDrop(list.id, list.cards.length)}
-    >
-      <div className="list-header">
-        <h2>{list.title}</h2>
-        <span>{list.cards.length} 件</span>
-      </div>
-
-      <div className="card-list">
-        {list.cards.map((card, index) => (
-          <article
-            className={`card-tile${card.archived ? " card-tile-archived" : ""}${
-              getAgedAlert(card)?.level === 1 ? " card-tile-alert" : ""
-            }${
-              (getAgedAlert(card)?.level ?? 0) >= 2 ? " card-tile-alert-strong" : ""
-            }`}
-            draggable={!card.archived}
-            key={card.id}
-            onClick={() => void onOpenCard(card.id)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              onOpenContextMenu({
-                x: event.clientX,
-                y: event.clientY,
-                card,
-              });
-            }}
-            onDragStart={() =>
-              onStartDrag({
-                cardId: card.id,
-                sourceListId: lookup.get(card.id)?.listId ?? list.id,
-              })
-            }
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              void onDrop(list.id, index);
-            }}
-          >
-            <div className="card-topline">
-              <span className="card-order-no">{card.project_no || "受注番号未設定"}</span>
-              <span className="due-pill">{card.response_due_date ?? "回答納期未設定"}</span>
-            </div>
-            <h3 className="card-customer-name">{card.customer_name || card.title}</h3>
-            <div className="label-row">
-              {card.labels.map((label) => (
-                <span className="label-chip" key={`${card.id}-${label}`}>
-                  {label}
-                </span>
-              ))}
-              {getAgedAlert(card)?.level === 1 ? (
-                <span className="label-chip alert-chip">{getAgedAlert(card)?.label}</span>
-              ) : null}
-              {(getAgedAlert(card)?.level ?? 0) >= 2 ? (
-                <span className="label-chip alert-chip alert-chip-strong">{getAgedAlert(card)?.label}</span>
-              ) : null}
-              {!card.archived && canArchiveCard(card) ? (
-                <span className="label-chip archivable-chip">アーカイブ可能</span>
-              ) : null}
-              {card.archived ? <span className="label-chip archived-chip">アーカイブ済み</span> : null}
-            </div>
-            <div className="meta-row">
-              <span>希望納期: {card.requested_due_date ?? "未設定"}</span>
-              <span>確認先: {card.assignee_name || "未設定"}</span>
-            </div>
-            <div className="meta-row">
-              <span>確認先: {card.assignee_name || "未設定"}</span>
-              <span>ステータス: {card.status}</span>
-            </div>
-            <div className="meta-row">
-              <span>最短◎発送日: {card.earliest_ship_date ?? "未設定"}</span>
-            </div>
-            <div className="meta-row">
-              <span>チェック {card.checklist_progress}</span>
-              <span>コメント {card.comment_count}</span>
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <div className="add-card-box">
-        <input
-          className="add-card-input"
-          placeholder="受注番号を入力して案件追加"
-          disabled={archiveViewMode === "archived"}
-          value={newCardTitle}
-          onChange={(event) => onChangeNewTitle(list.id, event.target.value)}
-          onKeyDown={(event) => {
-            if (archiveViewMode === "archived") {
-              return;
-            }
-            if (event.key === "Enter") {
-              void onCreateCard(list.id);
-            }
-          }}
-        />
-        <button
-          className="secondary-button add-card-button"
-          disabled={creatingListId === list.id || archiveViewMode === "archived"}
-          onClick={() => void onCreateCard(list.id)}
-          type="button"
-        >
-          {creatingListId === list.id ? "追加中..." : "案件追加"}
-        </button>
-      </div>
-    </section>
   );
 }
 

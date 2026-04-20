@@ -1,4 +1,10 @@
-import type { AuthUser, BoardResponse, CardDetail, ChecklistItem } from "./types";
+import type {
+  AuthUser,
+  InquiryDetail,
+  InquiryItemDetail,
+  InquiryListResponse,
+  KanbanResponse,
+} from "./types";
 
 const apiRoot = (
   import.meta.env.VITE_API_BASE_URL ??
@@ -70,54 +76,77 @@ export async function createUser(payload: {
   return handleResponse<AuthUser>(response);
 }
 
-export async function fetchBoard(includeArchived = false): Promise<BoardResponse> {
-  const response = await fetch(`${API_BASE}/board?include_archived=${includeArchived}`, {
+export async function fetchInquiries(): Promise<InquiryListResponse> {
+  const response = await fetch(`${API_BASE}/inquiries`, {
     headers: getAuthHeaders(),
   });
   return handleResponse(response);
 }
 
-export async function fetchCard(cardId: number): Promise<CardDetail> {
-  const response = await fetch(`${API_BASE}/cards/${cardId}`, {
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
-}
-
-export async function moveCard(params: {
-  card_id: number;
-  source_list_id: number;
-  destination_list_id: number;
-  destination_index: number;
-}): Promise<BoardResponse> {
-  const response = await fetch(`${API_BASE}/cards/move`, {
+export async function createInquiry(payload: {
+  customer_name: string;
+  order_nos: string;
+  requested_due_type: "shortest" | "specific";
+  requested_due_date: string | null;
+  request_kind: "confirm" | "shorten";
+  remarks: string;
+}): Promise<InquiryDetail> {
+  const response = await fetch(`${API_BASE}/inquiries`, {
     method: "POST",
     headers: getAuthHeaders(true),
-    body: JSON.stringify(params),
+    body: JSON.stringify(payload),
   });
   return handleResponse(response);
 }
 
-export async function saveCard(
-  cardId: number,
+export async function fetchInquiry(inquiryId: number): Promise<InquiryDetail> {
+  const response = await fetch(`${API_BASE}/inquiries/${inquiryId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function fetchKanban(): Promise<KanbanResponse> {
+  const response = await fetch(`${API_BASE}/kanban/items`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function moveInquiryItem(payload: {
+  item_id: number;
+  destination_process: string;
+  destination_index: number;
+}): Promise<KanbanResponse> {
+  const response = await fetch(`${API_BASE}/inquiry-items/move`, {
+    method: "POST",
+    headers: getAuthHeaders(true),
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
+export async function fetchInquiryItem(itemId: number): Promise<InquiryItemDetail> {
+  const response = await fetch(`${API_BASE}/inquiry-items/${itemId}`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function updateInquiryItem(
+  itemId: number,
   payload: {
-    title: string;
-    project_no: string;
-    customer_name: string;
-    status: string;
-    received_date: string | null;
-    requested_due_date: string | null;
-    assignee_name: string;
-    response_due_date: string | null;
-    earliest_ship_date: string | null;
-    description: string;
-    notes: string;
-    history_text: string;
-    labels: string[];
-    checklist: Array<Omit<ChecklistItem, "id"> & { id: number | null }>;
+    process: string;
+    owner: string;
+    state: "normal" | "waiting" | "done";
+    planned_arrival_date: string | null;
+    actual_arrival_date: string | null;
+    packing_due_date: string | null;
+    confirmed_shipping_date: string | null;
+    remarks: string;
   },
-): Promise<CardDetail> {
-  const response = await fetch(`${API_BASE}/cards/${cardId}`, {
+): Promise<InquiryItemDetail> {
+  const response = await fetch(`${API_BASE}/inquiry-items/${itemId}`, {
     method: "PUT",
     headers: getAuthHeaders(true),
     body: JSON.stringify(payload),
@@ -125,42 +154,8 @@ export async function saveCard(
   return handleResponse(response);
 }
 
-export async function addComment(cardId: number, body: string): Promise<CardDetail> {
-  const response = await fetch(`${API_BASE}/cards/${cardId}/comments`, {
-    method: "POST",
-    headers: getAuthHeaders(true),
-    body: JSON.stringify({ body }),
-  });
-  return handleResponse(response);
-}
-
-export async function createCard(
-  listId: number,
-  payload: {
-    title: string;
-    project_no?: string;
-    customer_name?: string;
-    description?: string;
-  },
-): Promise<CardDetail> {
-  const response = await fetch(`${API_BASE}/lists/${listId}/cards`, {
-    method: "POST",
-    headers: getAuthHeaders(true),
-    body: JSON.stringify(payload),
-  });
-  return handleResponse(response);
-}
-
-export async function archiveCard(cardId: number): Promise<CardDetail> {
-  const response = await fetch(`${API_BASE}/cards/${cardId}/archive`, {
-    method: "POST",
-    headers: getAuthHeaders(),
-  });
-  return handleResponse(response);
-}
-
-export async function unarchiveCard(cardId: number): Promise<CardDetail> {
-  const response = await fetch(`${API_BASE}/cards/${cardId}/unarchive`, {
+export async function confirmDrawingReady(itemId: number): Promise<InquiryItemDetail> {
+  const response = await fetch(`${API_BASE}/inquiry-items/${itemId}/confirm-drawing`, {
     method: "POST",
     headers: getAuthHeaders(),
   });
@@ -179,7 +174,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
         message = payload.detail;
       }
     } catch {
-      // Ignore JSON parse failures and keep the default message.
+      // Ignore JSON parse failures.
     }
     throw new Error(message);
   }
