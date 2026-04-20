@@ -4,6 +4,15 @@ export type AuthUser = {
   display_name: string;
 };
 
+// Legacy utility compatibility type.
+export type CardSummary = {
+  archived: boolean;
+  status: string;
+  requested_due_date: string | null;
+  received_date: string | null;
+  latest_activity_at: string | null;
+};
+
 export type InquirySummary = {
   id: number;
   display_id: string;
