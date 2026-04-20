@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,6 +27,18 @@ DEFAULT_LIST_TITLES = [
     "サプライヤー確認中",
     "１次対応完了",
 ]
+
+PROCESS_COLUMNS: list[tuple[str, str]] = [
+    ("sales_registered", "営業登録"),
+    ("not_drawn", "未出図"),
+    ("arranging", "手配中"),
+    ("arrival_receiving", "入荷・受入"),
+    ("internal_processing", "内部処理"),
+    ("shipped", "発送完了"),
+]
+
+STATE_VALUES = {"normal", "waiting", "done"}
+ITEM_TYPE_VALUES = {"P", "E", "S"}
 
 
 def get_connection() -> sqlite3.Connection:
@@ -76,10 +90,12 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS comment (
                 id INTEGER PRIMARY KEY,
                 card_id INTEGER NOT NULL,
+                author_user_id INTEGER,
                 author TEXT NOT NULL,
                 body TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE
+                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE,
+                FOREIGN KEY (author_user_id) REFERENCES user_account(id)
             );
 
             CREATE TABLE IF NOT EXISTS checklist_item (
@@ -94,19 +110,79 @@ def initialize_database() -> None:
             CREATE TABLE IF NOT EXISTS activity (
                 id INTEGER PRIMARY KEY,
                 card_id INTEGER NOT NULL,
+                actor_user_id INTEGER,
                 message TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE
+                FOREIGN KEY (card_id) REFERENCES card(id) ON DELETE CASCADE,
+                FOREIGN KEY (actor_user_id) REFERENCES user_account(id)
             );
+
+            CREATE TABLE IF NOT EXISTS user_account (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL UNIQUE,
+                display_name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                password_salt TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_session (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES user_account(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS inquiry (
+                id INTEGER PRIMARY KEY,
+                customer_name TEXT NOT NULL,
+                requested_due_type TEXT NOT NULL,
+                requested_due_date TEXT,
+                request_kind TEXT NOT NULL,
+                remarks TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS inquiry_item (
+                id INTEGER PRIMARY KEY,
+                inquiry_id INTEGER NOT NULL,
+                item_type TEXT NOT NULL,
+                item_no TEXT NOT NULL,
+                process TEXT NOT NULL,
+                owner TEXT NOT NULL DEFAULT '',
+                state TEXT NOT NULL,
+                planned_arrival_date TEXT,
+                actual_arrival_date TEXT,
+                packing_due_date TEXT,
+                confirmed_shipping_date TEXT,
+                drawing_ready_confirmed INTEGER NOT NULL DEFAULT 0,
+                drawing_ready_confirmed_at TEXT,
+                updated_at TEXT NOT NULL,
+                remarks TEXT,
+                position INTEGER NOT NULL DEFAULT 0,
+                legacy_card_id INTEGER,
+                FOREIGN KEY (inquiry_id) REFERENCES inquiry(id) ON DELETE CASCADE
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_inquiry_item_legacy_card
+                ON inquiry_item (legacy_card_id)
+                WHERE legacy_card_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_inquiry_item_inquiry_id ON inquiry_item (inquiry_id);
+            CREATE INDEX IF NOT EXISTS idx_inquiry_item_process_position ON inquiry_item (process, position, id);
             """
         )
         migrate_card_table(connection)
+        migrate_audit_tables(connection)
+        migrate_inquiry_tables(connection)
 
         board_count = connection.execute("SELECT COUNT(*) FROM board").fetchone()[0]
         if board_count == 0:
             seed_database(connection)
         else:
             ensure_default_lists(connection)
+        migrate_legacy_cards_to_inquiries(connection)
 
 
 def ensure_default_lists(connection: sqlite3.Connection) -> None:
@@ -154,11 +230,230 @@ def migrate_card_table(connection: sqlite3.Connection) -> None:
         "notes": "TEXT NOT NULL DEFAULT ''",
         "history_text": "TEXT NOT NULL DEFAULT ''",
         "archived": "INTEGER NOT NULL DEFAULT 0",
+        "created_by_user_id": "INTEGER",
+        "updated_by_user_id": "INTEGER",
     }
 
     for column_name, column_type in required_columns.items():
         if column_name not in columns:
             connection.execute(f"ALTER TABLE card ADD COLUMN {column_name} {column_type}")
+
+
+def migrate_audit_tables(connection: sqlite3.Connection) -> None:
+    comment_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(comment)").fetchall()
+    }
+    if "author_user_id" not in comment_columns:
+        connection.execute("ALTER TABLE comment ADD COLUMN author_user_id INTEGER")
+
+    activity_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(activity)").fetchall()
+    }
+    if "actor_user_id" not in activity_columns:
+        connection.execute("ALTER TABLE activity ADD COLUMN actor_user_id INTEGER")
+
+
+def _now_text() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _is_iso_date(value: str | None) -> bool:
+    if not value:
+        return False
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value))
+
+
+def _infer_item_type(project_no: str | None) -> str:
+    if not project_no:
+        return "P"
+    matched = re.match(r"^\s*([PES])\s*-\s*\d+\s*$", project_no.strip(), re.IGNORECASE)
+    if not matched:
+        return "P"
+    return matched.group(1).upper()
+
+
+def _map_card_status_to_process(status: str | None) -> str:
+    status_text = (status or "").strip()
+    if status_text in {"未対応", "設計確認中"}:
+        return "not_drawn"
+    if status_text in {"発注中", "サプライヤー確認中"}:
+        return "arranging"
+    if status_text == "１次対応完了":
+        return "shipped"
+    return "not_drawn"
+
+
+def _map_card_status_to_state(status: str | None) -> str:
+    status_text = (status or "").strip()
+    if status_text in {"設計確認中", "サプライヤー確認中"}:
+        return "waiting"
+    if status_text == "１次対応完了":
+        return "done"
+    return "normal"
+
+
+def _next_position(connection: sqlite3.Connection, process: str) -> int:
+    row = connection.execute(
+        "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM inquiry_item WHERE process = ?",
+        (process,),
+    ).fetchone()
+    return int(row["next_position"])
+
+
+def migrate_inquiry_tables(connection: sqlite3.Connection) -> None:
+    inquiry_columns = {row["name"] for row in connection.execute("PRAGMA table_info(inquiry)").fetchall()}
+    inquiry_required_columns = {
+        "customer_name": "TEXT NOT NULL DEFAULT ''",
+        "requested_due_type": "TEXT NOT NULL DEFAULT 'shortest'",
+        "requested_due_date": "TEXT",
+        "request_kind": "TEXT NOT NULL DEFAULT 'confirm'",
+        "remarks": "TEXT",
+        "created_at": "TEXT NOT NULL DEFAULT ''",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column_name, column_type in inquiry_required_columns.items():
+        if column_name not in inquiry_columns:
+            connection.execute(f"ALTER TABLE inquiry ADD COLUMN {column_name} {column_type}")
+
+    item_columns = {row["name"] for row in connection.execute("PRAGMA table_info(inquiry_item)").fetchall()}
+    item_required_columns = {
+        "inquiry_id": "INTEGER",
+        "item_type": "TEXT NOT NULL DEFAULT 'P'",
+        "item_no": "TEXT NOT NULL DEFAULT ''",
+        "process": "TEXT NOT NULL DEFAULT 'not_drawn'",
+        "owner": "TEXT NOT NULL DEFAULT ''",
+        "state": "TEXT NOT NULL DEFAULT 'normal'",
+        "planned_arrival_date": "TEXT",
+        "actual_arrival_date": "TEXT",
+        "packing_due_date": "TEXT",
+        "confirmed_shipping_date": "TEXT",
+        "drawing_ready_confirmed": "INTEGER NOT NULL DEFAULT 0",
+        "drawing_ready_confirmed_at": "TEXT",
+        "updated_at": "TEXT NOT NULL DEFAULT ''",
+        "remarks": "TEXT",
+        "position": "INTEGER NOT NULL DEFAULT 0",
+        "legacy_card_id": "INTEGER",
+    }
+    for column_name, column_type in item_required_columns.items():
+        if column_name not in item_columns:
+            connection.execute(f"ALTER TABLE inquiry_item ADD COLUMN {column_name} {column_type}")
+
+
+def migrate_legacy_cards_to_inquiries(connection: sqlite3.Connection) -> None:
+    card_rows = connection.execute(
+        """
+        SELECT
+            card.id,
+            card.project_no,
+            card.customer_name,
+            card.requested_due_date,
+            card.assignee_name,
+            card.response_due_date,
+            card.earliest_ship_date,
+            card.notes,
+            card.labels_json,
+            board_list.title AS status
+        FROM card
+        LEFT JOIN board_list ON board_list.id = card.list_id
+        WHERE card.id NOT IN (
+            SELECT legacy_card_id
+            FROM inquiry_item
+            WHERE legacy_card_id IS NOT NULL
+        )
+        ORDER BY card.id ASC
+        """
+    ).fetchall()
+    if not card_rows:
+        return
+
+    now_text = _now_text()
+    for card in card_rows:
+        requested_due_date = card["requested_due_date"] or None
+        requested_due_type = "specific" if _is_iso_date(requested_due_date) else "shortest"
+        normalized_requested_due_date = requested_due_date if requested_due_type == "specific" else None
+
+        request_kind = "confirm"
+        try:
+            labels = json.loads(card["labels_json"] or "[]")
+            if any("短縮" in str(label) for label in labels):
+                request_kind = "shorten"
+        except json.JSONDecodeError:
+            labels = []
+
+        cursor = connection.execute(
+            """
+            INSERT INTO inquiry (
+                customer_name,
+                requested_due_type,
+                requested_due_date,
+                request_kind,
+                remarks,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                (card["customer_name"] or "").strip() or "不明",
+                requested_due_type,
+                normalized_requested_due_date,
+                request_kind,
+                (card["notes"] or "").strip() or None,
+                now_text,
+                now_text,
+            ),
+        )
+        inquiry_id = cursor.lastrowid
+
+        process = _map_card_status_to_process(card["status"])
+        state = _map_card_status_to_state(card["status"])
+        drawing_ready_confirmed = 0 if process == "not_drawn" else 1
+
+        item_type = _infer_item_type(card["project_no"])
+        if item_type not in ITEM_TYPE_VALUES:
+            item_type = "P"
+
+        connection.execute(
+            """
+            INSERT INTO inquiry_item (
+                inquiry_id,
+                item_type,
+                item_no,
+                process,
+                owner,
+                state,
+                planned_arrival_date,
+                actual_arrival_date,
+                packing_due_date,
+                confirmed_shipping_date,
+                drawing_ready_confirmed,
+                drawing_ready_confirmed_at,
+                updated_at,
+                remarks,
+                position,
+                legacy_card_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                inquiry_id,
+                item_type,
+                (card["project_no"] or "").strip() or f"{item_type}-{card['id']}",
+                process,
+                (card["assignee_name"] or "").strip(),
+                state if state in STATE_VALUES else "normal",
+                card["response_due_date"] or None,
+                card["earliest_ship_date"] or None,
+                None,
+                None,
+                drawing_ready_confirmed,
+                now_text if drawing_ready_confirmed else None,
+                now_text,
+                (card["notes"] or "").strip() or None,
+                _next_position(connection, process),
+                card["id"],
+            ),
+        )
 
 
 def seed_database(connection: sqlite3.Connection) -> None:

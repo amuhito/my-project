@@ -119,3 +119,126 @@ class CreateCardRequest(BaseModel):
     project_no: str = ""
     customer_name: str = ""
     description: str = ""
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AuthUserResponse(BaseModel):
+    id: int
+    username: str
+    display_name: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    user: AuthUserResponse
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    display_name: str
+    password: str
+
+
+class InquirySummary(BaseModel):
+    id: int
+    display_id: str
+    customer_name: str
+    requested_due_type: str
+    requested_due_date: str | None
+    requested_due_display: str
+    request_kind: str
+    request_kind_label: str
+    remarks: str | None
+    item_count: int
+    created_at: str
+    updated_at: str
+
+
+class InquiryListResponse(BaseModel):
+    inquiries: list[InquirySummary]
+
+
+class InquiryItemSummary(BaseModel):
+    id: int
+    inquiry_id: int
+    inquiry_display_id: str
+    item_type: str
+    item_no: str
+    process: str
+    process_label: str
+    owner: str
+    state: str
+    state_label: str
+    planned_arrival_date: str | None
+    actual_arrival_date: str | None
+    packing_due_date: str | None
+    confirmed_shipping_date: str | None
+    drawing_ready_confirmed: bool
+    drawing_ready_confirmed_at: str | None
+    updated_at: str
+    remarks: str | None
+    customer_name: str
+    request_kind: str
+    request_kind_label: str
+    requested_due_type: str
+    requested_due_date: str | None
+    requested_due_display: str
+
+
+class InquiryDetail(BaseModel):
+    id: int
+    display_id: str
+    customer_name: str
+    requested_due_type: str
+    requested_due_date: str | None
+    requested_due_display: str
+    request_kind: str
+    request_kind_label: str
+    remarks: str | None
+    created_at: str
+    updated_at: str
+    items: list[InquiryItemSummary]
+
+
+class CreateInquiryRequest(BaseModel):
+    customer_name: str
+    order_nos: str
+    requested_due_type: str = "shortest"
+    requested_due_date: str | None = None
+    request_kind: str = "confirm"
+    remarks: str | None = None
+
+
+class UpdateInquiryItemRequest(BaseModel):
+    process: str
+    owner: str = ""
+    state: str
+    planned_arrival_date: str | None = None
+    actual_arrival_date: str | None = None
+    packing_due_date: str | None = None
+    confirmed_shipping_date: str | None = None
+    remarks: str | None = None
+
+
+class InquiryItemDetail(InquiryItemSummary):
+    pass
+
+
+class InquiryMoveRequest(BaseModel):
+    item_id: int
+    destination_process: str
+    destination_index: int = Field(ge=0)
+
+
+class KanbanColumn(BaseModel):
+    process: str
+    label: str
+    items: list[InquiryItemSummary]
+
+
+class KanbanResponse(BaseModel):
+    columns: list[KanbanColumn]

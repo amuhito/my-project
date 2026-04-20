@@ -1,74 +1,84 @@
-export type CardSummary = {
+export type AuthUser = {
   id: number;
-  title: string;
-  project_no: string;
+  username: string;
+  display_name: string;
+};
+
+export type InquirySummary = {
+  id: number;
+  display_id: string;
   customer_name: string;
-  status: string;
-  received_date: string | null;
-  latest_activity_at: string | null;
-  labels: string[];
+  requested_due_type: "shortest" | "specific";
   requested_due_date: string | null;
-  assignee_name: string;
-  response_due_date: string | null;
-  earliest_ship_date: string | null;
-  notes: string;
-  checklist_progress: string;
-  comment_count: number;
-  archived: boolean;
-};
-
-export type BoardList = {
-  id: number;
-  title: string;
-  position: number;
-  cards: CardSummary[];
-};
-
-export type BoardResponse = {
-  id: number;
-  title: string;
-  lists: BoardList[];
-};
-
-export type Comment = {
-  id: number;
-  author: string;
-  body: string;
+  requested_due_display: string;
+  request_kind: "confirm" | "shorten";
+  request_kind_label: string;
+  remarks: string | null;
+  item_count: number;
   created_at: string;
+  updated_at: string;
 };
 
-export type ChecklistItem = {
+export type InquiryItemSummary = {
   id: number;
-  text: string;
-  completed: boolean;
-  position: number;
-};
-
-export type Activity = {
-  id: number;
-  message: string;
-  created_at: string;
-};
-
-export type CardDetail = {
-  id: number;
-  list_id: number;
-  title: string;
-  project_no: string;
+  inquiry_id: number;
+  inquiry_display_id: string;
+  item_type: "P" | "E" | "S";
+  item_no: string;
+  process:
+    | "sales_registered"
+    | "not_drawn"
+    | "arranging"
+    | "arrival_receiving"
+    | "internal_processing"
+    | "shipped";
+  process_label: string;
+  owner: string;
+  state: "normal" | "waiting" | "done";
+  state_label: string;
+  planned_arrival_date: string | null;
+  actual_arrival_date: string | null;
+  packing_due_date: string | null;
+  confirmed_shipping_date: string | null;
+  drawing_ready_confirmed: boolean;
+  drawing_ready_confirmed_at: string | null;
+  updated_at: string;
+  remarks: string | null;
   customer_name: string;
-  status: string;
-  received_date: string | null;
-  latest_activity_at: string | null;
+  request_kind: "confirm" | "shorten";
+  request_kind_label: string;
+  requested_due_type: "shortest" | "specific";
   requested_due_date: string | null;
-  assignee_name: string;
-  response_due_date: string | null;
-  earliest_ship_date: string | null;
-  description: string;
-  notes: string;
-  history_text: string;
-  labels: string[];
-  comments: Comment[];
-  checklist: ChecklistItem[];
-  activities: Activity[];
-  archived: boolean;
+  requested_due_display: string;
 };
+
+export type InquiryDetail = {
+  id: number;
+  display_id: string;
+  customer_name: string;
+  requested_due_type: "shortest" | "specific";
+  requested_due_date: string | null;
+  requested_due_display: string;
+  request_kind: "confirm" | "shorten";
+  request_kind_label: string;
+  remarks: string | null;
+  created_at: string;
+  updated_at: string;
+  items: InquiryItemSummary[];
+};
+
+export type InquiryListResponse = {
+  inquiries: InquirySummary[];
+};
+
+export type KanbanColumn = {
+  process: InquiryItemSummary["process"];
+  label: string;
+  items: InquiryItemSummary[];
+};
+
+export type KanbanResponse = {
+  columns: KanbanColumn[];
+};
+
+export type InquiryItemDetail = InquiryItemSummary;
