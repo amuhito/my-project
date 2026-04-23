@@ -22,6 +22,13 @@ export type InquirySummary = {
   requested_due_display: string;
   request_kind: "confirm" | "shorten";
   request_kind_label: string;
+  overall_status:
+    | "unstarted"
+    | "in_progress"
+    | "partially_confirmed"
+    | "fully_confirmed"
+    | "completed";
+  overall_status_label: string;
   remarks: string | null;
   item_count: number;
   created_at: string;
@@ -39,16 +46,18 @@ export type InquiryItemSummary = {
     | "not_drawn"
     | "arranging"
     | "arrival_receiving"
-    | "internal_processing"
+    | "assembly"
+    | "packing"
     | "shipped";
   process_label: string;
   owner: string;
   state: "normal" | "waiting" | "done";
   state_label: string;
-  planned_arrival_date: string | null;
-  actual_arrival_date: string | null;
-  packing_due_date: string | null;
-  confirmed_shipping_date: string | null;
+  final_arrival_planned_date: string | null;
+  final_handover_date: string | null;
+  assembly_completed_date: string | null;
+  packing_completed_date: string | null;
+  shipping_planned_date: string | null;
   drawing_ready_confirmed: boolean;
   drawing_ready_confirmed_at: string | null;
   updated_at: string;
@@ -59,6 +68,16 @@ export type InquiryItemSummary = {
   requested_due_type: "shortest" | "specific";
   requested_due_date: string | null;
   requested_due_display: string;
+};
+
+export type InquiryComment = {
+  id: number;
+  inquiry_id: number;
+  comment_type: "normal" | "send_back";
+  comment_type_label: string;
+  body: string;
+  created_at: string;
+  created_by: string;
 };
 
 export type InquiryDetail = {
@@ -74,6 +93,7 @@ export type InquiryDetail = {
   created_at: string;
   updated_at: string;
   items: InquiryItemSummary[];
+  comments: InquiryComment[];
 };
 
 export type InquiryListResponse = {

@@ -1,6 +1,7 @@
 import type {
   AuthUser,
   InquiryDetail,
+  InquiryComment,
   InquiryItemDetail,
   InquiryListResponse,
   KanbanResponse,
@@ -106,6 +107,28 @@ export async function fetchInquiry(inquiryId: number): Promise<InquiryDetail> {
   return handleResponse(response);
 }
 
+export async function fetchInquiryComments(inquiryId: number): Promise<InquiryComment[]> {
+  const response = await fetch(`${API_BASE}/inquiries/${inquiryId}/comments`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse(response);
+}
+
+export async function addInquiryComment(
+  inquiryId: number,
+  payload: {
+    comment_type: "normal" | "send_back";
+    body: string;
+  },
+): Promise<InquiryComment> {
+  const response = await fetch(`${API_BASE}/inquiries/${inquiryId}/comments`, {
+    method: "POST",
+    headers: getAuthHeaders(true),
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(response);
+}
+
 export async function fetchKanban(): Promise<KanbanResponse> {
   const response = await fetch(`${API_BASE}/kanban/items`, {
     headers: getAuthHeaders(),
@@ -139,10 +162,11 @@ export async function updateInquiryItem(
     process: string;
     owner: string;
     state: "normal" | "waiting" | "done";
-    planned_arrival_date: string | null;
-    actual_arrival_date: string | null;
-    packing_due_date: string | null;
-    confirmed_shipping_date: string | null;
+    final_arrival_planned_date?: string | null;
+    final_handover_date?: string | null;
+    assembly_completed_date?: string | null;
+    packing_completed_date?: string | null;
+    shipping_planned_date?: string | null;
     remarks: string;
   },
 ): Promise<InquiryItemDetail> {

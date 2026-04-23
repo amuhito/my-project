@@ -7,7 +7,8 @@
     "environment": {
       "KANBAN_DB_PATH": "/tmp/kanban.db",
       "KANBAN_CORS_ORIGINS": "*",
-      "KANBAN_FRONTEND_DIST": "/app/frontend-dist"
+      "KANBAN_FRONTEND_DIST": "/app/frontend-dist",
+      "TZ": "Asia/Tokyo"
     }
   }
 }

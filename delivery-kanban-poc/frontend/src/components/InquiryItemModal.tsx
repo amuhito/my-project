@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { confirmDrawingReady, updateInquiryItem } from "../api";
+import { INQUIRY_ITEM_DATE_FIELD_LABELS } from "../constants";
 import type { InquiryItemDetail } from "../types";
+import { PROCESS_OPTIONS } from "../utils/inquiryDisplay";
 
 type InquiryItemModalProps = {
   item: InquiryItemDetail | null;
@@ -8,14 +10,6 @@ type InquiryItemModalProps = {
   onClose: () => void;
   onSaved: (item: InquiryItemDetail) => void;
 };
-
-const PROCESS_OPTIONS = [
-  { value: "not_drawn", label: "未出図" },
-  { value: "arranging", label: "手配中" },
-  { value: "arrival_receiving", label: "入荷・受入" },
-  { value: "internal_processing", label: "内部処理" },
-  { value: "shipped", label: "発送完了" },
-] as const;
 
 const STATE_OPTIONS = [
   { value: "normal", label: "通常" },
@@ -35,10 +29,11 @@ export function InquiryItemModal({ item, open, onClose, onSaved }: InquiryItemMo
   const [process, setProcess] = useState<InquiryItemDetail["process"]>("not_drawn");
   const [owner, setOwner] = useState("");
   const [state, setState] = useState<InquiryItemDetail["state"]>("normal");
-  const [plannedArrivalDate, setPlannedArrivalDate] = useState("");
-  const [actualArrivalDate, setActualArrivalDate] = useState("");
-  const [packingDueDate, setPackingDueDate] = useState("");
-  const [confirmedShippingDate, setConfirmedShippingDate] = useState("");
+  const [finalArrivalPlannedDate, setFinalArrivalPlannedDate] = useState("");
+  const [finalHandoverDate, setFinalHandoverDate] = useState("");
+  const [assemblyCompletedDate, setAssemblyCompletedDate] = useState("");
+  const [packingCompletedDate, setPackingCompletedDate] = useState("");
+  const [shippingPlannedDate, setShippingPlannedDate] = useState("");
   const [remarks, setRemarks] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -50,10 +45,11 @@ export function InquiryItemModal({ item, open, onClose, onSaved }: InquiryItemMo
     setProcess(item.process);
     setOwner(item.owner);
     setState(item.state);
-    setPlannedArrivalDate(toDateInput(item.planned_arrival_date));
-    setActualArrivalDate(toDateInput(item.actual_arrival_date));
-    setPackingDueDate(toDateInput(item.packing_due_date));
-    setConfirmedShippingDate(toDateInput(item.confirmed_shipping_date));
+    setFinalArrivalPlannedDate(toDateInput(item.final_arrival_planned_date));
+    setFinalHandoverDate(toDateInput(item.final_handover_date));
+    setAssemblyCompletedDate(toDateInput(item.assembly_completed_date));
+    setPackingCompletedDate(toDateInput(item.packing_completed_date));
+    setShippingPlannedDate(toDateInput(item.shipping_planned_date));
     setRemarks(item.remarks ?? "");
     setError("");
   }, [item]);
@@ -70,10 +66,12 @@ export function InquiryItemModal({ item, open, onClose, onSaved }: InquiryItemMo
         process,
         owner,
         state,
-        planned_arrival_date: plannedArrivalDate || null,
-        actual_arrival_date: actualArrivalDate || null,
-        packing_due_date: packingDueDate || null,
-        confirmed_shipping_date: confirmedShippingDate || null,
+        // Canonical domain fields (new)
+        final_arrival_planned_date: finalArrivalPlannedDate || null,
+        final_handover_date: finalHandoverDate || null,
+        assembly_completed_date: assemblyCompletedDate || null,
+        packing_completed_date: packingCompletedDate || null,
+        shipping_planned_date: shippingPlannedDate || null,
         remarks,
       });
       onSaved(updated);
@@ -109,9 +107,7 @@ export function InquiryItemModal({ item, open, onClose, onSaved }: InquiryItemMo
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
-          <h2>
-            子案件編集 {item.item_type}-{item.item_no.split("-")[1] ?? item.item_no}
-          </h2>
+          <h2>子案件編集 {item.item_no}</h2>
           <button className="ghost-button" onClick={onClose} type="button">
             閉じる
           </button>
@@ -146,33 +142,45 @@ export function InquiryItemModal({ item, open, onClose, onSaved }: InquiryItemMo
           </label>
         </div>
 
-        <div className="row-fields row-fields-4">
+        <div className="row-fields row-fields-5">
           <label className="field">
-            <span>入荷予定日</span>
+            <span>{INQUIRY_ITEM_DATE_FIELD_LABELS.final_arrival_planned_date}</span>
             <input
               type="date"
-              value={plannedArrivalDate}
-              onChange={(event) => setPlannedArrivalDate(event.target.value)}
+              value={finalArrivalPlannedDate}
+              onChange={(event) => setFinalArrivalPlannedDate(event.target.value)}
             />
           </label>
           <label className="field">
-            <span>入荷日</span>
+            <span>{INQUIRY_ITEM_DATE_FIELD_LABELS.final_handover_date}</span>
             <input
               type="date"
-              value={actualArrivalDate}
-              onChange={(event) => setActualArrivalDate(event.target.value)}
+              value={finalHandoverDate}
+              onChange={(event) => setFinalHandoverDate(event.target.value)}
             />
           </label>
           <label className="field">
-            <span>梱包納期</span>
-            <input type="date" value={packingDueDate} onChange={(event) => setPackingDueDate(event.target.value)} />
-          </label>
-          <label className="field">
-            <span>確定納期</span>
+            <span>{INQUIRY_ITEM_DATE_FIELD_LABELS.assembly_completed_date}</span>
             <input
               type="date"
-              value={confirmedShippingDate}
-              onChange={(event) => setConfirmedShippingDate(event.target.value)}
+              value={assemblyCompletedDate}
+              onChange={(event) => setAssemblyCompletedDate(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>{INQUIRY_ITEM_DATE_FIELD_LABELS.packing_completed_date}</span>
+            <input
+              type="date"
+              value={packingCompletedDate}
+              onChange={(event) => setPackingCompletedDate(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>{INQUIRY_ITEM_DATE_FIELD_LABELS.shipping_planned_date}</span>
+            <input
+              type="date"
+              value={shippingPlannedDate}
+              onChange={(event) => setShippingPlannedDate(event.target.value)}
             />
           </label>
         </div>

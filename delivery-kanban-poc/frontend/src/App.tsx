@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  addInquiryComment,
   clearStoredAuthToken,
   createInquiry,
   createUser,
@@ -14,6 +15,8 @@ import {
   moveInquiryItem,
 } from "./api";
 import { InquiryItemModal } from "./components/InquiryItemModal";
+import { INQUIRY_ITEM_DATE_FIELD_LABELS } from "./constants";
+import { buildOrderNoSummary, getProcessDisplayLabel } from "./utils/inquiryDisplay";
 import type {
   AuthUser,
   InquiryDetail,
@@ -39,6 +42,36 @@ function formatDateText(value: string | null) {
     return "-";
   }
   return value.slice(0, 10);
+}
+
+function formatDateTimeText(value: string | null) {
+  if (!value) {
+    return "-";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  return parsed.toLocaleString("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+function getShippingPlannedDate(item: InquiryItemSummary) {
+  return item.shipping_planned_date;
+}
+
+function getFinalArrivalPlannedDate(item: InquiryItemSummary) {
+  return item.final_arrival_planned_date;
+}
+
+function getFinalHandoverDate(item: InquiryItemSummary) {
+  return item.final_handover_date;
 }
 
 function toShortCustomerName(value: string) {
@@ -109,6 +142,18 @@ function App() {
       });
     });
     return map;
+  }, [kanbanColumns]);
+
+  const inquiryItemsByInquiry = useMemo(() => {
+    const grouped = new Map<number, InquiryItemSummary[]>();
+    kanbanColumns.forEach((column) => {
+      column.items.forEach((item) => {
+        const current = grouped.get(item.inquiry_id) ?? [];
+        current.push(item);
+        grouped.set(item.inquiry_id, current);
+      });
+    });
+    return grouped;
   }, [kanbanColumns]);
 
   const restoreSession = async () => {
@@ -200,6 +245,29 @@ function App() {
     await loadBaseData();
     if (inquiryDetail) {
       await openInquiryDetail(inquiryDetail.id);
+    }
+  };
+
+  const handleAddInquiryComment = async (
+    inquiryId: number,
+    commentType: "normal" | "send_back",
+    body: string,
+  ) => {
+    try {
+      await addInquiryComment(inquiryId, {
+        comment_type: commentType,
+        body,
+      });
+      const refreshed = await fetchInquiry(inquiryId);
+      setInquiryDetail(refreshed);
+      const listRefreshed = await fetchInquiries();
+      setInquiries(listRefreshed.inquiries);
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleLogout();
+        throw new Error("セッションが切れました。再ログインしてください。");
+      }
+      throw error;
     }
   };
 
@@ -325,7 +393,11 @@ function App() {
       {error ? <div className="error-banner">{error}</div> : null}
 
       {pageMode === "inquiries" ? (
-        <InquiryListSection inquiries={inquiries} onOpenDetail={(inquiryId) => void openInquiryDetail(inquiryId)} />
+        <InquiryListSection
+          inquiries={inquiries}
+          inquiryItemsByInquiry={inquiryItemsByInquiry}
+          onOpenDetail={(inquiryId) => void openInquiryDetail(inquiryId)}
+        />
       ) : null}
 
       {pageMode === "new-inquiry" ? (
@@ -340,7 +412,16 @@ function App() {
       ) : null}
 
       {pageMode === "inquiry-detail" && inquiryDetail ? (
-        <InquiryDetailSection inquiry={inquiryDetail} onEditItem={(itemId) => void openItemModal(itemId)} />
+        <InquiryDetailSection
+          inquiry={inquiryDetail}
+          onEditItem={(itemId) => void openItemModal(itemId)}
+          onAddComment={async (commentType, body) => {
+            if (!inquiryDetail) {
+              return;
+            }
+            await handleAddInquiryComment(inquiryDetail.id, commentType, body);
+          }}
+        />
       ) : null}
 
       {pageMode === "kanban" ? (
@@ -375,33 +456,167 @@ function App() {
 
 type InquiryListSectionProps = {
   inquiries: InquirySummary[];
+  inquiryItemsByInquiry: Map<number, InquiryItemSummary[]>;
   onOpenDetail: (inquiryId: number) => void;
 };
 
-function InquiryListSection({ inquiries, onOpenDetail }: InquiryListSectionProps) {
+type InquirySortMode = "updated-desc" | "created-desc" | "status";
+
+function InquiryListSection({ inquiries, inquiryItemsByInquiry, onOpenDetail }: InquiryListSectionProps) {
+  const [customerFilter, setCustomerFilter] = useState("");
+  const [requestKindFilter, setRequestKindFilter] = useState<"all" | "confirm" | "shorten">("all");
+  const [dueTypeFilter, setDueTypeFilter] = useState<"all" | "shortest" | "specific">("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | "unstarted" | "in_progress" | "partially_confirmed" | "fully_confirmed" | "completed"
+  >("all");
+  const [sortMode, setSortMode] = useState<InquirySortMode>("updated-desc");
+
+  const statusOrder: Record<InquirySummary["overall_status"], number> = {
+    unstarted: 0,
+    in_progress: 1,
+    partially_confirmed: 2,
+    fully_confirmed: 3,
+    completed: 4,
+  };
+
+  const filteredInquiries = useMemo(() => {
+    const normalizedCustomer = customerFilter.trim().toLowerCase();
+    const list = inquiries.filter((inquiry) => {
+      if (normalizedCustomer && !inquiry.customer_name.toLowerCase().includes(normalizedCustomer)) {
+        return false;
+      }
+      if (requestKindFilter !== "all" && inquiry.request_kind !== requestKindFilter) {
+        return false;
+      }
+      if (dueTypeFilter !== "all" && inquiry.requested_due_type !== dueTypeFilter) {
+        return false;
+      }
+      if (statusFilter !== "all" && inquiry.overall_status !== statusFilter) {
+        return false;
+      }
+      return true;
+    });
+
+    return [...list].sort((left, right) => {
+      if (sortMode === "updated-desc") {
+        return right.updated_at.localeCompare(left.updated_at);
+      }
+      if (sortMode === "created-desc") {
+        return right.created_at.localeCompare(left.created_at);
+      }
+      const statusDiff = statusOrder[left.overall_status] - statusOrder[right.overall_status];
+      if (statusDiff !== 0) {
+        return statusDiff;
+      }
+      return right.updated_at.localeCompare(left.updated_at);
+    });
+  }, [customerFilter, dueTypeFilter, inquiries, requestKindFilter, sortMode, statusFilter]);
+
   return (
     <section className="table-panel">
+      <div className="row-fields row-fields-5">
+        <label className="field">
+          <span>納入先</span>
+          <input
+            placeholder="納入先で絞り込み"
+            value={customerFilter}
+            onChange={(event) => setCustomerFilter(event.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>依頼内容</span>
+          <select
+            value={requestKindFilter}
+            onChange={(event) => setRequestKindFilter(event.target.value as "all" | "confirm" | "shorten")}
+          >
+            <option value="all">すべて</option>
+            <option value="confirm">納期確認依頼</option>
+            <option value="shorten">納期短縮依頼</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>希望納期種別</span>
+          <select
+            value={dueTypeFilter}
+            onChange={(event) => setDueTypeFilter(event.target.value as "all" | "shortest" | "specific")}
+          >
+            <option value="all">すべて</option>
+            <option value="shortest">最短</option>
+            <option value="specific">指定日</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>全体ステータス</span>
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(
+                event.target.value as
+                  | "all"
+                  | "unstarted"
+                  | "in_progress"
+                  | "partially_confirmed"
+                  | "fully_confirmed"
+                  | "completed",
+              )
+            }
+          >
+            <option value="all">すべて</option>
+            <option value="unstarted">未着手</option>
+            <option value="in_progress">進行中</option>
+            <option value="partially_confirmed">一部確定</option>
+            <option value="fully_confirmed">全件確定</option>
+            <option value="completed">全件完了</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>並び順</span>
+          <select
+            value={sortMode}
+            onChange={(event) => setSortMode(event.target.value as InquirySortMode)}
+          >
+            <option value="updated-desc">最終更新日順</option>
+            <option value="created-desc">作成日順</option>
+            <option value="status">ステータス順</option>
+          </select>
+        </label>
+      </div>
+
       <table className="case-table">
         <thead>
           <tr>
             <th>問い合わせID</th>
             <th>納入先</th>
-            <th>希望納期</th>
+            <th>対象受注番号</th>
             <th>依頼内容</th>
-            <th>案件件数</th>
-            <th>作成日</th>
+            <th>希望納期</th>
+            <th>問い合わせ全体ステータス</th>
+            <th>最終更新日</th>
             <th>操作</th>
           </tr>
         </thead>
         <tbody>
-          {inquiries.map((inquiry) => (
+          {filteredInquiries.map((inquiry) => (
             <tr key={inquiry.id}>
               <td>{inquiry.display_id}</td>
               <td>{inquiry.customer_name}</td>
+              <td>
+                <span className="order-summary-text" title={buildOrderNoSummary(inquiryItemsByInquiry.get(inquiry.id))}>
+                  {buildOrderNoSummary(inquiryItemsByInquiry.get(inquiry.id))}
+                </span>
+              </td>
+              <td>
+                <span className={`label-chip ${inquiry.request_kind === "shorten" ? "danger-chip" : "info-chip"}`}>
+                  {inquiry.request_kind_label}
+                </span>
+              </td>
               <td>{inquiry.requested_due_display}</td>
-              <td>{inquiry.request_kind_label}</td>
-              <td>{inquiry.item_count}</td>
-              <td>{formatDateText(inquiry.created_at)}</td>
+              <td>
+                <span className={`label-chip status-chip status-${inquiry.overall_status}`}>
+                  {inquiry.overall_status_label}
+                </span>
+              </td>
+              <td>{formatDateText(inquiry.updated_at)}</td>
               <td>
                 <button className="secondary-button" onClick={() => onOpenDetail(inquiry.id)} type="button">
                   詳細
@@ -484,8 +699,8 @@ function InquiryCreateSection({ onCreated, onError }: InquiryCreateSectionProps)
         <label className="field">
           <span>依頼内容</span>
           <select value={requestKind} onChange={(event) => setRequestKind(event.target.value as "confirm" | "shorten")}>
-            <option value="confirm">納期確認</option>
-            <option value="shorten">納期短縮</option>
+            <option value="confirm">納期確認依頼</option>
+            <option value="shorten">納期短縮依頼</option>
           </select>
         </label>
       </div>
@@ -542,9 +757,34 @@ function InquiryCreateSection({ onCreated, onError }: InquiryCreateSectionProps)
 type InquiryDetailSectionProps = {
   inquiry: InquiryDetail;
   onEditItem: (itemId: number) => void;
+  onAddComment: (commentType: "normal" | "send_back", body: string) => Promise<void>;
 };
 
-function InquiryDetailSection({ inquiry, onEditItem }: InquiryDetailSectionProps) {
+function InquiryDetailSection({ inquiry, onEditItem, onAddComment }: InquiryDetailSectionProps) {
+  const [commentType, setCommentType] = useState<"normal" | "send_back">("normal");
+  const [commentBody, setCommentBody] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
+  const [commentError, setCommentError] = useState("");
+
+  const submitComment = async () => {
+    if (!commentBody.trim()) {
+      setCommentError("コメント本文を入力してください。");
+      return;
+    }
+
+    try {
+      setSavingComment(true);
+      setCommentError("");
+      await onAddComment(commentType, commentBody);
+      setCommentBody("");
+      setCommentType("normal");
+    } catch (error) {
+      setCommentError(error instanceof Error ? error.message : "コメント追加に失敗しました。");
+    } finally {
+      setSavingComment(false);
+    }
+  };
+
   return (
     <section className="panel">
       <h2>問い合わせ詳細 {inquiry.display_id}</h2>
@@ -575,7 +815,9 @@ function InquiryDetailSection({ inquiry, onEditItem }: InquiryDetailSectionProps
             <th>工程</th>
             <th>担当</th>
             <th>希望納期</th>
-            <th>確定納期</th>
+            <th>{INQUIRY_ITEM_DATE_FIELD_LABELS.final_arrival_planned_date}</th>
+            <th>{INQUIRY_ITEM_DATE_FIELD_LABELS.final_handover_date}</th>
+            <th>{INQUIRY_ITEM_DATE_FIELD_LABELS.shipping_planned_date}</th>
             <th>状態</th>
             <th>更新日</th>
             <th>操作</th>
@@ -586,10 +828,12 @@ function InquiryDetailSection({ inquiry, onEditItem }: InquiryDetailSectionProps
             <tr key={item.id}>
               <td>{item.item_type}</td>
               <td>{item.item_no}</td>
-              <td>{item.process_label}</td>
+              <td>{getProcessDisplayLabel(item.process)}</td>
               <td>{item.owner || "-"}</td>
               <td>{inquiry.requested_due_display}</td>
-              <td>{formatDateText(item.confirmed_shipping_date)}</td>
+              <td>{formatDateText(getFinalArrivalPlannedDate(item))}</td>
+              <td>{formatDateText(getFinalHandoverDate(item))}</td>
+              <td>{formatDateText(getShippingPlannedDate(item))}</td>
               <td>{item.state_label}</td>
               <td>{formatDateText(item.updated_at)}</td>
               <td>
@@ -601,6 +845,64 @@ function InquiryDetailSection({ inquiry, onEditItem }: InquiryDetailSectionProps
           ))}
         </tbody>
       </table>
+
+      <section className="panel inquiry-comments-panel">
+        <h3>問い合わせコメント</h3>
+
+        {commentError ? <div className="error-banner">{commentError}</div> : null}
+
+        <div className="row-fields row-fields-2">
+          <label className="field">
+            <span>コメント種別</span>
+            <select
+              value={commentType}
+              onChange={(event) => setCommentType(event.target.value as "normal" | "send_back")}
+            >
+              <option value="normal">通常コメント</option>
+              <option value="send_back">差し戻し</option>
+            </select>
+          </label>
+        </div>
+
+        <label className="field">
+          <span>コメント本文</span>
+          <textarea
+            rows={3}
+            value={commentBody}
+            onChange={(event) => setCommentBody(event.target.value)}
+            placeholder="問い合わせ単位のメモや差し戻し意図を入力"
+          />
+        </label>
+        <div className="modal-footer">
+          <button
+            className="primary-button"
+            type="button"
+            disabled={savingComment}
+            onClick={() => void submitComment()}
+          >
+            {savingComment ? "追加中..." : "コメント追加"}
+          </button>
+        </div>
+
+        <div className="comment-list">
+          {inquiry.comments.length === 0 ? (
+            <div className="panel-muted">コメントはまだありません。</div>
+          ) : (
+            inquiry.comments.map((comment) => (
+              <article className="comment-item" key={comment.id}>
+                <div className="comment-meta">
+                  <span className={`label-chip ${comment.comment_type === "send_back" ? "danger-chip" : "info-chip"}`}>
+                    {comment.comment_type_label}
+                  </span>
+                  <span>{comment.created_by}</span>
+                  <span>{formatDateTimeText(comment.created_at)}</span>
+                </div>
+                <p>{comment.body}</p>
+              </article>
+            ))
+          )}
+        </div>
+      </section>
     </section>
   );
 }
@@ -614,25 +916,143 @@ type KanbanSectionProps = {
 };
 
 function KanbanSection({ columns, lookup, onDrop, onOpenItem, onStartDrag }: KanbanSectionProps) {
+  const [typeFilter, setTypeFilter] = useState<"all" | "P" | "E" | "S">("all");
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [stateFilter, setStateFilter] = useState<"all" | "normal" | "waiting" | "done">("all");
+  const [customerFilter, setCustomerFilter] = useState("");
+  const [notDrawnOnly, setNotDrawnOnly] = useState(false);
+  const [withoutConfirmedDueOnly, setWithoutConfirmedDueOnly] = useState(false);
+
+  const hasActiveFilter =
+    typeFilter !== "all" ||
+    ownerFilter.trim() !== "" ||
+    stateFilter !== "all" ||
+    customerFilter.trim() !== "" ||
+    notDrawnOnly ||
+    withoutConfirmedDueOnly;
+
+  const filteredColumns = useMemo(() => {
+    const normalizedOwner = ownerFilter.trim().toLowerCase();
+    const normalizedCustomer = customerFilter.trim().toLowerCase();
+    return columns.map((column) => ({
+      ...column,
+      items: column.items.filter((item) => {
+        if (typeFilter !== "all" && item.item_type !== typeFilter) {
+          return false;
+        }
+        if (normalizedOwner && !item.owner.toLowerCase().includes(normalizedOwner)) {
+          return false;
+        }
+        if (stateFilter !== "all" && item.state !== stateFilter) {
+          return false;
+        }
+        if (normalizedCustomer && !item.customer_name.toLowerCase().includes(normalizedCustomer)) {
+          return false;
+        }
+        if (notDrawnOnly && item.process !== "not_drawn") {
+          return false;
+        }
+        if (
+          withoutConfirmedDueOnly &&
+          getShippingPlannedDate(item) !== null &&
+          getShippingPlannedDate(item) !== ""
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    }));
+  }, [columns, customerFilter, notDrawnOnly, ownerFilter, stateFilter, typeFilter, withoutConfirmedDueOnly]);
+
   return (
-    <main className="board board-6">
-      {columns.map((column) => (
+    <>
+      <section className="table-panel">
+        <div className="row-fields row-fields-6">
+          <label className="field">
+            <span>種別</span>
+            <select
+              value={typeFilter}
+              onChange={(event) => setTypeFilter(event.target.value as "all" | "P" | "E" | "S")}
+            >
+              <option value="all">すべて</option>
+              <option value="P">P</option>
+              <option value="E">E</option>
+              <option value="S">S</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>担当</span>
+            <input
+              placeholder="担当で絞り込み"
+              value={ownerFilter}
+              onChange={(event) => setOwnerFilter(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>状態</span>
+            <select
+              value={stateFilter}
+              onChange={(event) => setStateFilter(event.target.value as "all" | "normal" | "waiting" | "done")}
+            >
+              <option value="all">すべて</option>
+              <option value="normal">通常</option>
+              <option value="waiting">待ち</option>
+              <option value="done">完了</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>納入先</span>
+            <input
+              placeholder="納入先で絞り込み"
+              value={customerFilter}
+              onChange={(event) => setCustomerFilter(event.target.value)}
+            />
+          </label>
+          <label className="field checkbox-field">
+            <span>未出図のみ</span>
+            <input
+              type="checkbox"
+              checked={notDrawnOnly}
+              onChange={(event) => setNotDrawnOnly(event.target.checked)}
+            />
+          </label>
+          <label className="field checkbox-field">
+            <span>確定納期未入力のみ</span>
+            <input
+              type="checkbox"
+              checked={withoutConfirmedDueOnly}
+              onChange={(event) => setWithoutConfirmedDueOnly(event.target.checked)}
+            />
+          </label>
+        </div>
+        {hasActiveFilter ? (
+          <div className="panel-muted">フィルタ中はドラッグ移動を無効化しています。</div>
+        ) : null}
+      </section>
+
+      <main className="board board-6">
+      {filteredColumns.map((column) => (
         <section
           key={column.process}
           className="list-column"
           onDragOver={(event) => event.preventDefault()}
-          onDrop={() => void onDrop(column.process, column.items.length)}
+          onDrop={() => {
+            if (hasActiveFilter) {
+              return;
+            }
+            void onDrop(column.process, column.items.length);
+          }}
         >
           <div className="list-header">
-            <h2>{column.label}</h2>
+            <h2>{getProcessDisplayLabel(column.process)}</h2>
             <span>{column.items.length} 件</span>
           </div>
 
           <div className="card-list">
             {column.items.map((item, index) => (
               <article
-                className="card-tile"
-                draggable
+                className={`card-tile ${item.process === "not_drawn" ? "card-not-drawn" : ""}`}
+                draggable={!hasActiveFilter}
                 key={item.id}
                 onClick={() => onOpenItem(item.id)}
                 onDragStart={() =>
@@ -643,6 +1063,9 @@ function KanbanSection({ columns, lookup, onDrop, onOpenItem, onStartDrag }: Kan
                 }
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
+                  if (hasActiveFilter) {
+                    return;
+                  }
                   event.preventDefault();
                   event.stopPropagation();
                   void onDrop(column.process, index);
@@ -656,14 +1079,19 @@ function KanbanSection({ columns, lookup, onDrop, onOpenItem, onStartDrag }: Kan
                   <span className={`label-chip ${item.request_kind === "shorten" ? "danger-chip" : "info-chip"}`}>
                     {item.request_kind_label}
                   </span>
+                  {item.process === "not_drawn" ? <span className="label-chip warning-chip">未出図</span> : null}
                 </div>
                 <h3 className="card-customer-name">{toShortCustomerName(item.customer_name)}</h3>
+                <div className="meta-row">
+                  <span>工程: {getProcessDisplayLabel(item.process)}</span>
+                </div>
                 <div className="meta-row">
                   <span>担当: {item.owner || "未設定"}</span>
                   <span>希望納期: {item.requested_due_display}</span>
                 </div>
                 <div className="meta-row">
-                  <span>状態: {item.state_label}</span>
+                  <span>状態:</span>
+                  <span className={`label-chip state-chip state-${item.state}`}>{item.state_label}</span>
                 </div>
               </article>
             ))}
@@ -671,6 +1099,7 @@ function KanbanSection({ columns, lookup, onDrop, onOpenItem, onStartDrag }: Kan
         </section>
       ))}
     </main>
+    </>
   );
 }
 

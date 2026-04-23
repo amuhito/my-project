@@ -152,6 +152,8 @@ class InquirySummary(BaseModel):
     requested_due_display: str
     request_kind: str
     request_kind_label: str
+    overall_status: str
+    overall_status_label: str
     remarks: str | None
     item_count: int
     created_at: str
@@ -173,10 +175,12 @@ class InquiryItemSummary(BaseModel):
     owner: str
     state: str
     state_label: str
-    planned_arrival_date: str | None
-    actual_arrival_date: str | None
-    packing_due_date: str | None
-    confirmed_shipping_date: str | None
+    # Canonical domain date fields (public API contract).
+    final_arrival_planned_date: str | None
+    final_handover_date: str | None
+    assembly_completed_date: str | None
+    packing_completed_date: str | None
+    shipping_planned_date: str | None
     drawing_ready_confirmed: bool
     drawing_ready_confirmed_at: str | None
     updated_at: str
@@ -187,6 +191,16 @@ class InquiryItemSummary(BaseModel):
     requested_due_type: str
     requested_due_date: str | None
     requested_due_display: str
+
+
+class InquiryComment(BaseModel):
+    id: int
+    inquiry_id: int
+    comment_type: str
+    comment_type_label: str
+    body: str
+    created_at: str
+    created_by: str
 
 
 class InquiryDetail(BaseModel):
@@ -202,6 +216,7 @@ class InquiryDetail(BaseModel):
     created_at: str
     updated_at: str
     items: list[InquiryItemSummary]
+    comments: list[InquiryComment]
 
 
 class CreateInquiryRequest(BaseModel):
@@ -213,14 +228,20 @@ class CreateInquiryRequest(BaseModel):
     remarks: str | None = None
 
 
+class AddInquiryCommentRequest(BaseModel):
+    comment_type: str = "normal"
+    body: str
+
+
 class UpdateInquiryItemRequest(BaseModel):
     process: str
     owner: str = ""
     state: str
-    planned_arrival_date: str | None = None
-    actual_arrival_date: str | None = None
-    packing_due_date: str | None = None
-    confirmed_shipping_date: str | None = None
+    final_arrival_planned_date: str | None = None
+    final_handover_date: str | None = None
+    assembly_completed_date: str | None = None
+    packing_completed_date: str | None = None
+    shipping_planned_date: str | None = None
     remarks: str | None = None
 
 

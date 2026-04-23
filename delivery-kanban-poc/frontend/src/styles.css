@@ -149,6 +149,14 @@ button {
   vertical-align: top;
 }
 
+.order-summary-text {
+  display: inline-block;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .board {
   display: grid;
   gap: 12px;
@@ -236,6 +244,61 @@ button {
   color: #b91c1c;
 }
 
+.warning-chip {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.state-chip {
+  min-width: 48px;
+  text-align: center;
+}
+
+.state-normal {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.state-waiting {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.state-done {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-unstarted {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.status-in_progress {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-partially_confirmed {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-fully_confirmed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-completed {
+  background: #bbf7d0;
+  color: #14532d;
+}
+
 .meta-row {
   font-size: 12px;
   color: #334155;
@@ -272,6 +335,25 @@ button {
 
 .row-fields-4 > * {
   width: calc(25% - 7.5px);
+}
+
+.row-fields-5 > * {
+  width: calc(20% - 8px);
+}
+
+.row-fields-6 > * {
+  width: calc(16.666% - 8.4px);
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 8px;
+}
+
+.card-not-drawn {
+  border-color: #f59e0b;
+  background: #fffbeb;
 }
 
 .detail-grid {
@@ -342,6 +424,37 @@ button {
   color: #64748b;
 }
 
+.inquiry-comments-panel {
+  margin-top: 14px;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.comment-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.comment-item p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.comment-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: #475569;
+}
+
 @media (max-width: 1280px) {
   .board-6 {
     grid-template-columns: repeat(3, minmax(220px, 1fr));
@@ -366,13 +479,17 @@ button {
   .row-fields,
   .row-fields-2,
   .row-fields-3,
-  .row-fields-4 {
+  .row-fields-4,
+  .row-fields-5,
+  .row-fields-6 {
     flex-direction: column;
   }
 
   .row-fields-2 > *,
   .row-fields-3 > *,
-  .row-fields-4 > * {
+  .row-fields-4 > *,
+  .row-fields-5 > *,
+  .row-fields-6 > * {
     width: 100%;
   }
 

@@ -11,8 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from .auth import AuthUser, authenticate_user, create_session, create_user, ensure_default_user, list_users, resolve_user_by_token
 from .database import initialize_database
 from .inquiry_repository import (
+    add_inquiry_comment,
     confirm_drawing_ready,
     create_inquiry,
+    fetch_inquiry_comments,
     fetch_inquiry_detail,
     fetch_inquiry_item,
     fetch_inquiry_list,
@@ -31,6 +33,7 @@ from .repository import (
 )
 from .schemas import (
     AddCommentRequest,
+    AddInquiryCommentRequest,
     AuthUserResponse,
     BoardResponse,
     CardDetail,
@@ -38,6 +41,7 @@ from .schemas import (
     CreateUserRequest,
     CreateCardRequest,
     InquiryDetail,
+    InquiryComment,
     InquiryItemDetail,
     InquiryListResponse,
     InquiryMoveRequest,
@@ -174,6 +178,7 @@ def get_board(
     include_archived: bool = Query(default=False),
     _: AuthUser = Depends(require_auth_user),
 ) -> BoardResponse:
+    # Legacy: 旧カード構造API（非推奨）。正式導線は問い合わせ/子案件APIを利用する。
     return fetch_board(include_archived=include_archived)
 
 
@@ -199,6 +204,32 @@ def get_inquiry(inquiry_id: int, _: AuthUser = Depends(require_auth_user)) -> In
     if inquiry is None:
         raise HTTPException(status_code=404, detail="Inquiry not found")
     return inquiry
+
+
+@app.get("/api/inquiries/{inquiry_id}/comments", response_model=list[InquiryComment])
+def get_inquiry_comments(
+    inquiry_id: int,
+    _: AuthUser = Depends(require_auth_user),
+) -> list[InquiryComment]:
+    inquiry = fetch_inquiry_detail(inquiry_id)
+    if inquiry is None:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    return fetch_inquiry_comments(inquiry_id)
+
+
+@app.post("/api/inquiries/{inquiry_id}/comments", response_model=InquiryComment)
+def post_inquiry_comment(
+    inquiry_id: int,
+    payload: AddInquiryCommentRequest,
+    current_user: AuthUser = Depends(require_auth_user),
+) -> InquiryComment:
+    try:
+        comment = add_inquiry_comment(inquiry_id, payload, current_user)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if comment is None:
+        raise HTTPException(status_code=404, detail="Inquiry not found")
+    return comment
 
 
 @app.get("/api/kanban/items", response_model=KanbanResponse)
@@ -251,6 +282,8 @@ def post_confirm_drawing(
     return item
 
 
+# Legacy: 以下の /api/cards* と /api/lists/*/cards は旧カード構造向け（非推奨）。
+# フロントの正式導線では利用しない。後方互換のため残置している。
 @app.get("/api/cards/{card_id}", response_model=CardDetail)
 def get_card(card_id: int, _: AuthUser = Depends(require_auth_user)) -> CardDetail:
     card = fetch_card_detail(card_id)

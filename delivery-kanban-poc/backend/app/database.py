@@ -31,9 +31,13 @@ DEFAULT_LIST_TITLES = [
 PROCESS_COLUMNS: list[tuple[str, str]] = [
     ("sales_registered", "営業登録"),
     ("not_drawn", "未出図"),
-    ("arranging", "手配中"),
-    ("arrival_receiving", "入荷・受入"),
-    ("internal_processing", "内部処理"),
+    ("arranging", "調達中"),
+    ("arrival_receiving", "検査・表面処理"),
+    # Process/date alignment (R2):
+    # - assembly -> assembly_completed_date
+    # - packing -> packing_completed_date
+    ("assembly", "組付け"),
+    ("packing", "梱包"),
     ("shipped", "発送完了"),
 ]
 
@@ -153,10 +157,11 @@ def initialize_database() -> None:
                 process TEXT NOT NULL,
                 owner TEXT NOT NULL DEFAULT '',
                 state TEXT NOT NULL,
-                planned_arrival_date TEXT,
-                actual_arrival_date TEXT,
-                packing_due_date TEXT,
-                confirmed_shipping_date TEXT,
+                final_arrival_planned_date TEXT,
+                final_handover_date TEXT,
+                assembly_completed_date TEXT,
+                packing_completed_date TEXT,
+                shipping_planned_date TEXT,
                 drawing_ready_confirmed INTEGER NOT NULL DEFAULT 0,
                 drawing_ready_confirmed_at TEXT,
                 updated_at TEXT NOT NULL,
@@ -171,11 +176,26 @@ def initialize_database() -> None:
                 WHERE legacy_card_id IS NOT NULL;
             CREATE INDEX IF NOT EXISTS idx_inquiry_item_inquiry_id ON inquiry_item (inquiry_id);
             CREATE INDEX IF NOT EXISTS idx_inquiry_item_process_position ON inquiry_item (process, position, id);
+
+            CREATE TABLE IF NOT EXISTS inquiry_comment (
+                id INTEGER PRIMARY KEY,
+                inquiry_id INTEGER NOT NULL,
+                comment_type TEXT NOT NULL,
+                body TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                created_by_user_id INTEGER,
+                FOREIGN KEY (inquiry_id) REFERENCES inquiry(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_inquiry_comment_inquiry_id_created
+                ON inquiry_comment (inquiry_id, created_at, id);
             """
         )
         migrate_card_table(connection)
         migrate_audit_tables(connection)
         migrate_inquiry_tables(connection)
+        migrate_inquiry_process_values(connection)
+        migrate_inquiry_comment_table(connection)
 
         board_count = connection.execute("SELECT COUNT(*) FROM board").fetchone()[0]
         if board_count == 0:
@@ -323,10 +343,11 @@ def migrate_inquiry_tables(connection: sqlite3.Connection) -> None:
         "process": "TEXT NOT NULL DEFAULT 'not_drawn'",
         "owner": "TEXT NOT NULL DEFAULT ''",
         "state": "TEXT NOT NULL DEFAULT 'normal'",
-        "planned_arrival_date": "TEXT",
-        "actual_arrival_date": "TEXT",
-        "packing_due_date": "TEXT",
-        "confirmed_shipping_date": "TEXT",
+        "final_arrival_planned_date": "TEXT",
+        "final_handover_date": "TEXT",
+        "assembly_completed_date": "TEXT",
+        "packing_completed_date": "TEXT",
+        "shipping_planned_date": "TEXT",
         "drawing_ready_confirmed": "INTEGER NOT NULL DEFAULT 0",
         "drawing_ready_confirmed_at": "TEXT",
         "updated_at": "TEXT NOT NULL DEFAULT ''",
@@ -337,6 +358,167 @@ def migrate_inquiry_tables(connection: sqlite3.Connection) -> None:
     for column_name, column_type in item_required_columns.items():
         if column_name not in item_columns:
             connection.execute(f"ALTER TABLE inquiry_item ADD COLUMN {column_name} {column_type}")
+
+    migrate_inquiry_item_date_columns(connection)
+
+
+def migrate_inquiry_item_date_columns(connection: sqlite3.Connection) -> None:
+    old_to_new = {
+        "planned_arrival_date": "final_arrival_planned_date",
+        "actual_arrival_date": "final_handover_date",
+        "packing_due_date": "assembly_completed_date",
+        "confirmed_shipping_date": "shipping_planned_date",
+    }
+    item_columns = {row["name"] for row in connection.execute("PRAGMA table_info(inquiry_item)").fetchall()}
+    has_legacy_columns = any(old_column in item_columns for old_column in old_to_new)
+    if not has_legacy_columns:
+        return
+
+    # Ensure canonical columns exist before data copy.
+    for new_column in old_to_new.values():
+        if new_column not in item_columns:
+            connection.execute(f"ALTER TABLE inquiry_item ADD COLUMN {new_column} TEXT")
+    if "packing_completed_date" not in item_columns:
+        connection.execute("ALTER TABLE inquiry_item ADD COLUMN packing_completed_date TEXT")
+
+    # Copy legacy values only when canonical value is empty.
+    for old_column, new_column in old_to_new.items():
+        if old_column in item_columns:
+            connection.execute(
+                f"""
+                UPDATE inquiry_item
+                SET {new_column} = {old_column}
+                WHERE ({new_column} IS NULL OR {new_column} = '')
+                  AND ({old_column} IS NOT NULL AND {old_column} != '')
+                """
+            )
+
+    connection.execute(
+        """
+        CREATE TABLE inquiry_item_new (
+            id INTEGER PRIMARY KEY,
+            inquiry_id INTEGER NOT NULL,
+            item_type TEXT NOT NULL,
+            item_no TEXT NOT NULL,
+            process TEXT NOT NULL,
+            owner TEXT NOT NULL DEFAULT '',
+            state TEXT NOT NULL,
+            final_arrival_planned_date TEXT,
+            final_handover_date TEXT,
+            assembly_completed_date TEXT,
+            packing_completed_date TEXT,
+            shipping_planned_date TEXT,
+            drawing_ready_confirmed INTEGER NOT NULL DEFAULT 0,
+            drawing_ready_confirmed_at TEXT,
+            updated_at TEXT NOT NULL,
+            remarks TEXT,
+            position INTEGER NOT NULL DEFAULT 0,
+            legacy_card_id INTEGER,
+            FOREIGN KEY (inquiry_id) REFERENCES inquiry(id) ON DELETE CASCADE
+        )
+        """
+    )
+    connection.execute(
+        """
+        INSERT INTO inquiry_item_new (
+            id,
+            inquiry_id,
+            item_type,
+            item_no,
+            process,
+            owner,
+            state,
+            final_arrival_planned_date,
+            final_handover_date,
+            assembly_completed_date,
+            packing_completed_date,
+            shipping_planned_date,
+            drawing_ready_confirmed,
+            drawing_ready_confirmed_at,
+            updated_at,
+            remarks,
+            position,
+            legacy_card_id
+        )
+        SELECT
+            id,
+            inquiry_id,
+            item_type,
+            item_no,
+            process,
+            owner,
+            state,
+            final_arrival_planned_date,
+            final_handover_date,
+            assembly_completed_date,
+            packing_completed_date,
+            shipping_planned_date,
+            drawing_ready_confirmed,
+            drawing_ready_confirmed_at,
+            updated_at,
+            remarks,
+            position,
+            legacy_card_id
+        FROM inquiry_item
+        """
+    )
+    connection.execute("DROP TABLE inquiry_item")
+    connection.execute("ALTER TABLE inquiry_item_new RENAME TO inquiry_item")
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_inquiry_item_legacy_card
+            ON inquiry_item (legacy_card_id)
+            WHERE legacy_card_id IS NOT NULL
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_inquiry_item_inquiry_id ON inquiry_item (inquiry_id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_inquiry_item_process_position ON inquiry_item (process, position, id)"
+    )
+
+
+def migrate_inquiry_process_values(connection: sqlite3.Connection) -> None:
+    # R2 process split: internal_processing (legacy) -> assembly (canonical).
+    connection.execute(
+        """
+        UPDATE inquiry_item
+        SET process = 'assembly'
+        WHERE process = 'internal_processing'
+        """
+    )
+
+    # Keep process positions contiguous after migration.
+    for process, _label in PROCESS_COLUMNS:
+        rows = connection.execute(
+            """
+            SELECT id
+            FROM inquiry_item
+            WHERE process = ?
+            ORDER BY position ASC, id ASC
+            """,
+            (process,),
+        ).fetchall()
+        for index, row in enumerate(rows):
+            connection.execute("UPDATE inquiry_item SET position = ? WHERE id = ?", (index, row["id"]))
+
+
+def migrate_inquiry_comment_table(connection: sqlite3.Connection) -> None:
+    comment_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(inquiry_comment)").fetchall()
+    }
+    required_columns = {
+        "inquiry_id": "INTEGER",
+        "comment_type": "TEXT NOT NULL DEFAULT 'normal'",
+        "body": "TEXT NOT NULL DEFAULT ''",
+        "created_at": "TEXT NOT NULL DEFAULT ''",
+        "created_by": "TEXT NOT NULL DEFAULT ''",
+        "created_by_user_id": "INTEGER",
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in comment_columns:
+            connection.execute(f"ALTER TABLE inquiry_comment ADD COLUMN {column_name} {column_type}")
 
 
 def migrate_legacy_cards_to_inquiries(connection: sqlite3.Connection) -> None:
@@ -422,10 +604,11 @@ def migrate_legacy_cards_to_inquiries(connection: sqlite3.Connection) -> None:
                 process,
                 owner,
                 state,
-                planned_arrival_date,
-                actual_arrival_date,
-                packing_due_date,
-                confirmed_shipping_date,
+                final_arrival_planned_date,
+                final_handover_date,
+                assembly_completed_date,
+                packing_completed_date,
+                shipping_planned_date,
                 drawing_ready_confirmed,
                 drawing_ready_confirmed_at,
                 updated_at,
@@ -433,7 +616,7 @@ def migrate_legacy_cards_to_inquiries(connection: sqlite3.Connection) -> None:
                 position,
                 legacy_card_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 inquiry_id,
@@ -444,6 +627,7 @@ def migrate_legacy_cards_to_inquiries(connection: sqlite3.Connection) -> None:
                 state if state in STATE_VALUES else "normal",
                 card["response_due_date"] or None,
                 card["earliest_ship_date"] or None,
+                None,
                 None,
                 None,
                 drawing_ready_confirmed,

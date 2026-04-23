@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 from .auth import AuthUser
 from .database import PROCESS_COLUMNS, get_connection
 from .schemas import (
+    AddInquiryCommentRequest,
     CreateInquiryRequest,
+    InquiryComment,
     InquiryDetail,
     InquiryItemDetail,
     InquiryItemSummary,
@@ -26,8 +28,19 @@ STATE_LABELS = {
     "done": "完了",
 }
 REQUEST_KIND_LABELS = {
-    "confirm": "納期確認",
-    "shorten": "納期短縮",
+    "confirm": "納期確認依頼",
+    "shorten": "納期短縮依頼",
+}
+INQUIRY_COMMENT_TYPE_LABELS = {
+    "normal": "通常コメント",
+    "send_back": "差し戻し",
+}
+INQUIRY_STATUS_LABELS = {
+    "unstarted": "未着手",
+    "in_progress": "進行中",
+    "partially_confirmed": "一部確定",
+    "fully_confirmed": "全件確定",
+    "completed": "全件完了",
 }
 
 
@@ -147,10 +160,11 @@ def _row_to_item_summary(row) -> InquiryItemSummary:
         owner=row["owner"] or "",
         state=row["state"],
         state_label=STATE_LABELS[row["state"]],
-        planned_arrival_date=row["planned_arrival_date"],
-        actual_arrival_date=row["actual_arrival_date"],
-        packing_due_date=row["packing_due_date"],
-        confirmed_shipping_date=row["confirmed_shipping_date"],
+        final_arrival_planned_date=row["final_arrival_planned_date"],
+        final_handover_date=row["final_handover_date"],
+        assembly_completed_date=row["assembly_completed_date"],
+        packing_completed_date=row["packing_completed_date"],
+        shipping_planned_date=row["shipping_planned_date"],
         drawing_ready_confirmed=bool(row["drawing_ready_confirmed"]),
         drawing_ready_confirmed_at=row["drawing_ready_confirmed_at"],
         updated_at=row["updated_at"],
@@ -162,6 +176,38 @@ def _row_to_item_summary(row) -> InquiryItemSummary:
         requested_due_date=row["requested_due_date"],
         requested_due_display=("最短" if row["requested_due_type"] == "shortest" else (row["requested_due_date"] or "-")),
     )
+
+
+def _row_to_inquiry_comment(row) -> InquiryComment:
+    return InquiryComment(
+        id=row["id"],
+        inquiry_id=row["inquiry_id"],
+        comment_type=row["comment_type"],
+        comment_type_label=INQUIRY_COMMENT_TYPE_LABELS.get(row["comment_type"], row["comment_type"]),
+        body=row["body"],
+        created_at=row["created_at"],
+        created_by=row["created_by"],
+    )
+
+
+def _derive_inquiry_overall_status(row) -> str:
+    item_count = int(row["item_count"] or 0)
+    if item_count == 0:
+        return "unstarted"
+
+    unstarted_count = int(row["unstarted_count"] or 0)
+    done_count = int(row["done_count"] or 0)
+    confirmed_count = int(row["confirmed_count"] or 0)
+
+    if done_count == item_count:
+        return "completed"
+    if unstarted_count == item_count:
+        return "unstarted"
+    if confirmed_count == item_count:
+        return "fully_confirmed"
+    if 0 < confirmed_count < item_count:
+        return "partially_confirmed"
+    return "in_progress"
 
 
 def fetch_inquiry_list() -> InquiryListResponse:
@@ -177,7 +223,26 @@ def fetch_inquiry_list() -> InquiryListResponse:
                 inquiry.remarks,
                 inquiry.created_at,
                 inquiry.updated_at,
-                COUNT(inquiry_item.id) AS item_count
+                COUNT(inquiry_item.id) AS item_count,
+                SUM(
+                    CASE
+                        WHEN inquiry_item.process IN ('sales_registered', 'not_drawn') THEN 1
+                        ELSE 0
+                    END
+                ) AS unstarted_count,
+                SUM(
+                    CASE
+                        WHEN inquiry_item.process = 'shipped' OR inquiry_item.state = 'done' THEN 1
+                        ELSE 0
+                    END
+                ) AS done_count,
+                SUM(
+                    CASE
+                        WHEN inquiry_item.shipping_planned_date IS NOT NULL
+                             AND inquiry_item.shipping_planned_date != '' THEN 1
+                        ELSE 0
+                    END
+                ) AS confirmed_count
             FROM inquiry
             LEFT JOIN inquiry_item ON inquiry_item.inquiry_id = inquiry.id
             GROUP BY inquiry.id
@@ -185,23 +250,28 @@ def fetch_inquiry_list() -> InquiryListResponse:
             """
         ).fetchall()
 
-    inquiries = [
-        InquirySummary(
-            id=row["id"],
-            display_id=f"INQ-{row['id']:05d}",
-            customer_name=row["customer_name"],
-            requested_due_type=row["requested_due_type"],
-            requested_due_date=row["requested_due_date"],
-            requested_due_display=("最短" if row["requested_due_type"] == "shortest" else (row["requested_due_date"] or "-")),
-            request_kind=row["request_kind"],
-            request_kind_label=REQUEST_KIND_LABELS[row["request_kind"]],
-            remarks=row["remarks"],
-            item_count=row["item_count"],
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
+    inquiries: list[InquirySummary] = []
+    for row in rows:
+        # 営業向け一覧表示のため、問い合わせ全体ステータスを集約表示する。
+        overall_status = _derive_inquiry_overall_status(row)
+        inquiries.append(
+            InquirySummary(
+                id=row["id"],
+                display_id=f"INQ-{row['id']:05d}",
+                customer_name=row["customer_name"],
+                requested_due_type=row["requested_due_type"],
+                requested_due_date=row["requested_due_date"],
+                requested_due_display=("最短" if row["requested_due_type"] == "shortest" else (row["requested_due_date"] or "-")),
+                request_kind=row["request_kind"],
+                request_kind_label=REQUEST_KIND_LABELS[row["request_kind"]],
+                overall_status=overall_status,
+                overall_status_label=INQUIRY_STATUS_LABELS[overall_status],
+                remarks=row["remarks"],
+                item_count=row["item_count"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+            )
         )
-        for row in rows
-    ]
     return InquiryListResponse(inquiries=inquiries)
 
 
@@ -241,8 +311,24 @@ def fetch_inquiry_detail(inquiry_id: int) -> InquiryDetail | None:
             """,
             (inquiry_id,),
         ).fetchall()
+        comment_rows = connection.execute(
+            """
+            SELECT
+                id,
+                inquiry_id,
+                comment_type,
+                body,
+                created_at,
+                created_by
+            FROM inquiry_comment
+            WHERE inquiry_id = ?
+            ORDER BY datetime(created_at) ASC, id ASC
+            """,
+            (inquiry_id,),
+        ).fetchall()
 
     items = [_row_to_item_summary(row) for row in item_rows]
+    comments = [_row_to_inquiry_comment(row) for row in comment_rows]
     return InquiryDetail(
         id=inquiry["id"],
         display_id=f"INQ-{inquiry['id']:05d}",
@@ -256,7 +342,36 @@ def fetch_inquiry_detail(inquiry_id: int) -> InquiryDetail | None:
         created_at=inquiry["created_at"],
         updated_at=inquiry["updated_at"],
         items=items,
+        comments=comments,
     )
+
+
+def fetch_inquiry_comments(inquiry_id: int) -> list[InquiryComment]:
+    with get_connection() as connection:
+        inquiry_row = connection.execute(
+            "SELECT id FROM inquiry WHERE id = ?",
+            (inquiry_id,),
+        ).fetchone()
+        if inquiry_row is None:
+            return []
+
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                inquiry_id,
+                comment_type,
+                body,
+                created_at,
+                created_by
+            FROM inquiry_comment
+            WHERE inquiry_id = ?
+            ORDER BY datetime(created_at) ASC, id ASC
+            """,
+            (inquiry_id,),
+        ).fetchall()
+
+    return [_row_to_inquiry_comment(row) for row in rows]
 
 
 def create_inquiry(payload: CreateInquiryRequest, actor: AuthUser) -> InquiryDetail:
@@ -317,17 +432,18 @@ def create_inquiry(payload: CreateInquiryRequest, actor: AuthUser) -> InquiryDet
                     process,
                     owner,
                     state,
-                    planned_arrival_date,
-                    actual_arrival_date,
-                    packing_due_date,
-                    confirmed_shipping_date,
+                    final_arrival_planned_date,
+                    final_handover_date,
+                    assembly_completed_date,
+                    packing_completed_date,
+                    shipping_planned_date,
                     drawing_ready_confirmed,
                     drawing_ready_confirmed_at,
                     updated_at,
                     remarks,
                     position
                 )
-                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, 0, NULL, ?, NULL, ?)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, 0, NULL, ?, NULL, ?)
                 """,
                 (
                     inquiry_id,
@@ -351,6 +467,67 @@ def create_inquiry(payload: CreateInquiryRequest, actor: AuthUser) -> InquiryDet
     if detail is None:
         raise ValueError("問い合わせ作成後の取得に失敗しました。")
     return detail
+
+
+def add_inquiry_comment(
+    inquiry_id: int,
+    payload: AddInquiryCommentRequest,
+    actor: AuthUser,
+) -> InquiryComment | None:
+    comment_type = payload.comment_type.strip() or "normal"
+    if comment_type not in INQUIRY_COMMENT_TYPE_LABELS:
+        raise ValueError("コメント種別が不正です。")
+    body = _normalize_text(payload.body)
+    if not body:
+        raise ValueError("コメント本文は必須です。")
+
+    now_text = _now_text()
+    with get_connection() as connection:
+        inquiry_row = connection.execute(
+            "SELECT id FROM inquiry WHERE id = ?",
+            (inquiry_id,),
+        ).fetchone()
+        if inquiry_row is None:
+            return None
+
+        cursor = connection.execute(
+            """
+            INSERT INTO inquiry_comment (
+                inquiry_id,
+                comment_type,
+                body,
+                created_at,
+                created_by,
+                created_by_user_id
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (inquiry_id, comment_type, body, now_text, actor.display_name, actor.id),
+        )
+        comment_id = cursor.lastrowid
+
+        connection.execute(
+            "UPDATE inquiry SET updated_at = ? WHERE id = ?",
+            (now_text, inquiry_id),
+        )
+
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                inquiry_id,
+                comment_type,
+                body,
+                created_at,
+                created_by
+            FROM inquiry_comment
+            WHERE id = ?
+            """,
+            (comment_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return _row_to_inquiry_comment(row)
 
 
 def fetch_kanban() -> KanbanResponse:
@@ -430,10 +607,11 @@ def update_inquiry_item(item_id: int, payload: UpdateInquiryItemRequest, actor: 
                 process = ?,
                 owner = ?,
                 state = ?,
-                planned_arrival_date = ?,
-                actual_arrival_date = ?,
-                packing_due_date = ?,
-                confirmed_shipping_date = ?,
+                final_arrival_planned_date = ?,
+                final_handover_date = ?,
+                assembly_completed_date = ?,
+                packing_completed_date = ?,
+                shipping_planned_date = ?,
                 updated_at = ?,
                 remarks = ?,
                 position = ?
@@ -443,10 +621,11 @@ def update_inquiry_item(item_id: int, payload: UpdateInquiryItemRequest, actor: 
                 payload.process,
                 _normalize_text(payload.owner),
                 payload.state,
-                payload.planned_arrival_date,
-                payload.actual_arrival_date,
-                payload.packing_due_date,
-                payload.confirmed_shipping_date,
+                payload.final_arrival_planned_date,
+                payload.final_handover_date,
+                payload.assembly_completed_date,
+                payload.packing_completed_date,
+                payload.shipping_planned_date,
                 now_text,
                 _normalize_text(payload.remarks) or None,
                 int(new_position),
