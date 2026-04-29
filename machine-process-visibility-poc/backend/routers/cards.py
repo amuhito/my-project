@@ -195,31 +195,26 @@ def update_card(card_id: int, payload: CardPayload, user: dict[str, Any] = Depen
 
 @router.post("/{card_id}/comments")
 def add_comment(card_id: int, payload: CommentPayload, user: dict[str, Any] = Depends(require_ready_user)) -> dict[str, Any]:
-    if payload.comment_type not in COMMENT_TYPES:
-        raise HTTPException(status_code=400, detail="不正なコメント種別です")
-    if not payload.body.strip():
-        raise HTTPException(status_code=400, detail="コメントを入力してください")
-    if payload.user_id and payload.user_id != user["assignee_id"]:
-        require_admin(user)
-    with db() as conn:
-        get_card_or_404(conn, card_id)
-        user_id = user["assignee_id"] or payload.user_id
-        cur = conn.execute(
-            "INSERT INTO comments(card_id, comment_type, body, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
-            (card_id, payload.comment_type, payload.body.strip(), user_id, now_iso()),
-        )
-        return dict(conn.execute("SELECT * FROM comments WHERE id = ?", (cur.lastrowid,)).fetchone())
+    raise HTTPException(status_code=400, detail="コメントは作業実績から登録してください")
 
 
 @router.post("/{card_id}/work-results")
 def register_work_result(card_id: int, payload: WorkResultPayload, user: dict[str, Any] = Depends(require_ready_user)) -> dict[str, Any]:
     if payload.comment_type not in COMMENT_TYPES:
-        raise HTTPException(status_code=400, detail="不正なコメント種別です")
+        raise HTTPException(status_code=400, detail="不正な作業分類です")
     work_date = validate_iso_date(payload.work_date, "作業日") or date.today().isoformat()
-    if payload.completed_qty_delta == 0 and payload.work_hours == 0 and not payload.comment.strip():
-        raise HTTPException(status_code=400, detail="作業実績を入力してください")
-    if payload.completed_qty_delta < 0 and not payload.comment.strip():
-        raise HTTPException(status_code=400, detail="数量をマイナスする場合は理由コメントを入力してください")
+    work_type = payload.comment_type
+    comment_body = payload.comment.strip()
+    if payload.completed_qty_delta < 0 and work_type != "手戻り":
+        raise HTTPException(status_code=400, detail="加工数量のマイナス入力は作業分類が手戻りの場合のみ可能です")
+    if work_type == "作業" and (payload.completed_qty_delta <= 0 or payload.work_hours <= 0):
+        raise HTTPException(status_code=400, detail="作業の場合は加工数量と作業時間を入力してください")
+    if work_type == "手戻り" and (payload.completed_qty_delta >= 0 or not comment_body):
+        raise HTTPException(status_code=400, detail="手戻りの場合はマイナスの加工数量と理由コメントを入力してください")
+    if work_type == "コメント" and (payload.completed_qty_delta != 0 or payload.work_hours != 0 or not comment_body):
+        raise HTTPException(status_code=400, detail="コメントの場合は加工数量と作業時間を0にしてコメントを入力してください")
+    if work_type == "開始" and (payload.completed_qty_delta != 0 or payload.work_hours != 0):
+        raise HTTPException(status_code=400, detail="開始の場合は加工数量と作業時間を0にしてください")
     if payload.assignee_id and payload.assignee_id != user["assignee_id"]:
         require_admin(user)
     with db() as conn:
@@ -232,10 +227,10 @@ def register_work_result(card_id: int, payload: WorkResultPayload, user: dict[st
             raise HTTPException(status_code=400, detail="数量増減後の完了数は総数を超えられません")
         comment_id = None
         worker_id = payload.assignee_id or user["assignee_id"] or card["assignee_id"]
-        if payload.comment.strip():
+        if comment_body:
             cur = conn.execute(
                 "INSERT INTO comments(card_id, comment_type, body, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
-                (card_id, payload.comment_type, payload.comment.strip(), worker_id, now_iso()),
+                (card_id, work_type, comment_body, worker_id, now_iso()),
             )
             comment_id = cur.lastrowid
         status = "完了" if new_completed >= card["total_qty"] else ("作業中" if new_completed > 0 else "未着手")
@@ -246,16 +241,17 @@ def register_work_result(card_id: int, payload: WorkResultPayload, user: dict[st
         conn.execute(
             """
             INSERT INTO work_logs(
-                card_id, assignee_id, registered_by_user_id, process_id, work_date,
+                card_id, assignee_id, registered_by_user_id, process_id, work_type, work_date,
                 completed_qty_delta, work_hours, comment_id, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 card_id,
                 worker_id,
                 user["id"],
                 card["current_process_id"],
+                work_type,
                 work_date,
                 payload.completed_qty_delta,
                 payload.work_hours,

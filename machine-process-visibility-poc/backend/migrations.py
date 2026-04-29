@@ -66,6 +66,7 @@ def allow_negative_work_log_delta(conn: sqlite3.Connection) -> None:
             assignee_id INTEGER REFERENCES assignees(id),
             registered_by_user_id INTEGER REFERENCES users(id),
             process_id INTEGER REFERENCES processes(id),
+            work_type TEXT NOT NULL DEFAULT '作業',
             work_date TEXT NOT NULL,
             completed_qty_delta INTEGER NOT NULL,
             work_hours REAL NOT NULL CHECK(work_hours >= 0),
@@ -73,15 +74,46 @@ def allow_negative_work_log_delta(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
         INSERT INTO work_logs_new(
-            id, card_id, assignee_id, registered_by_user_id, process_id, work_date,
+            id, card_id, assignee_id, registered_by_user_id, process_id, work_type, work_date,
             completed_qty_delta, work_hours, comment_id, created_at
         )
         SELECT
-            id, card_id, assignee_id, registered_by_user_id, process_id, work_date,
+            id, card_id, assignee_id, registered_by_user_id, process_id, '作業', work_date,
             completed_qty_delta, work_hours, comment_id, created_at
         FROM work_logs;
         DROP TABLE work_logs;
         ALTER TABLE work_logs_new RENAME TO work_logs;
+        """
+    )
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
+def sync_comment_classification_constraint(conn: sqlite3.Connection) -> None:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'comments'").fetchone()
+    if not row or "気づき" not in row["sql"]:
+        return
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.executescript(
+        """
+        CREATE TABLE comments_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            comment_type TEXT NOT NULL CHECK(comment_type IN ('開始', '作業', '手戻り', 'コメント')),
+            body TEXT NOT NULL,
+            user_id INTEGER REFERENCES assignees(id),
+            created_at TEXT NOT NULL
+        );
+        INSERT INTO comments_new(id, card_id, comment_type, body, user_id, created_at)
+        SELECT
+            id,
+            card_id,
+            CASE WHEN comment_type IN ('開始', '作業', '手戻り', 'コメント') THEN comment_type ELSE 'コメント' END,
+            body,
+            user_id,
+            created_at
+        FROM comments;
+        DROP TABLE comments;
+        ALTER TABLE comments_new RENAME TO comments;
         """
     )
     conn.execute("PRAGMA foreign_keys = ON")
@@ -135,7 +167,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS comments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-                comment_type TEXT NOT NULL CHECK(comment_type IN ('作業', '気づき', '異常', '補足')),
+                comment_type TEXT NOT NULL CHECK(comment_type IN ('開始', '作業', '手戻り', 'コメント')),
                 body TEXT NOT NULL,
                 user_id INTEGER REFERENCES assignees(id),
                 created_at TEXT NOT NULL
@@ -146,6 +178,7 @@ def init_db() -> None:
                 assignee_id INTEGER REFERENCES assignees(id),
                 registered_by_user_id INTEGER REFERENCES users(id),
                 process_id INTEGER REFERENCES processes(id),
+                work_type TEXT NOT NULL DEFAULT '作業',
                 work_date TEXT NOT NULL,
                 completed_qty_delta INTEGER NOT NULL,
                 work_hours REAL NOT NULL CHECK(work_hours >= 0),
@@ -187,7 +220,26 @@ def init_db() -> None:
         ensure_column(conn, "cards", "remarks", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "work_logs", "process_id", "INTEGER REFERENCES processes(id)")
         ensure_column(conn, "work_logs", "registered_by_user_id", "INTEGER REFERENCES users(id)")
+        ensure_column(conn, "work_logs", "work_type", "TEXT NOT NULL DEFAULT '作業'")
         allow_negative_work_log_delta(conn)
+        sync_comment_classification_constraint(conn)
+        conn.execute(
+            """
+            UPDATE work_logs
+            SET work_type = COALESCE(
+                (
+                    SELECT CASE
+                        WHEN comments.comment_type IN ('開始', '作業', '手戻り', 'コメント') THEN comments.comment_type
+                        ELSE 'コメント'
+                    END
+                    FROM comments
+                    WHERE comments.id = work_logs.comment_id
+                ),
+                work_type,
+                '作業'
+            )
+            """
+        )
         ensure_column(conn, "users", "password_must_change", "INTEGER NOT NULL DEFAULT 1")
         ensure_column(conn, "users", "password_changed_at", "TEXT")
         ensure_column(conn, "sessions", "expires_at", "TEXT")

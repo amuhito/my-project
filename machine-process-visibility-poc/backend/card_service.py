@@ -80,7 +80,7 @@ def get_card_detail_or_404(conn: sqlite3.Connection, card_id: int) -> dict[str, 
         dict(row)
         for row in conn.execute(
             """
-            SELECT wl.*, a.name AS assignee_name, c.comment_type, c.body AS comment_body
+            SELECT wl.*, a.name AS assignee_name, COALESCE(wl.work_type, c.comment_type) AS comment_type, c.body AS comment_body
             FROM work_logs wl
             LEFT JOIN assignees a ON a.id = wl.assignee_id
             LEFT JOIN comments c ON c.id = wl.comment_id

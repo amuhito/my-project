@@ -24,5 +24,5 @@ def meta(user: dict[str, Any] = Depends(require_ready_user)) -> dict[str, Any]:
             "processes": [dict(row) for row in conn.execute("SELECT * FROM processes ORDER BY sort_order")],
             "assignees": [dict(row) for row in conn.execute("SELECT * FROM assignees WHERE active = 1 ORDER BY id")],
             "tags": [dict(row) for row in conn.execute("SELECT * FROM tags ORDER BY id")],
-            "comment_types": sorted(COMMENT_TYPES),
+            "comment_types": COMMENT_TYPES,
         }

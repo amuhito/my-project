@@ -43,8 +43,8 @@ def daily_report(
                     users.display_name AS registered_by_name,
                     processes.name AS process_name,
                     comments.body AS comment,
-                    comments.comment_type,
-                    CASE WHEN comments.comment_type IN ('異常', '気づき') THEN comments.body ELSE '' END AS finding
+                    COALESCE(wl.work_type, comments.comment_type) AS comment_type,
+                    CASE WHEN COALESCE(wl.work_type, comments.comment_type) = '手戻り' THEN comments.body ELSE '' END AS finding
                 FROM work_logs wl
                 JOIN cards ON cards.id = wl.card_id
                 LEFT JOIN assignees ON assignees.id = wl.assignee_id

@@ -22,7 +22,6 @@ export function CardModal({
   const isAdmin = currentUser.role === "admin";
   const [draft, setDraft] = useState<Card | CardDraft>(card);
   const [tagIds, setTagIds] = useState<number[]>(card.tags?.map((tag) => tag.id) ?? []);
-  const [comment, setComment] = useState({ comment_type: "作業", body: "" });
   const [work, setWork] = useState<WorkFormState>({
     work_date: localDateString(),
     completed_qty_delta: 0,
@@ -44,20 +43,6 @@ export function CardModal({
         body: JSON.stringify(toPayload(draft, tagIds)),
       });
       onSaved(saved.id);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  async function addComment(event: FormEvent) {
-    event.preventDefault();
-    const cardId = draft.id;
-    if (isNew || !cardId) return;
-    setError("");
-    try {
-      await request(`/cards/${cardId}/comments`, { method: "POST", body: JSON.stringify(comment) });
-      setComment({ comment_type: "作業", body: "" });
-      onSaved(cardId);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -97,8 +82,17 @@ export function CardModal({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function updateWorkType(value: string) {
+    setWork({ ...work, comment_type: value });
+    if (value === "開始" || value === "コメント") {
+      setWorkQtyText("0");
+      setWorkHoursText("0");
+    }
+  }
+
   const adminOnlyDisabled = !isAdmin;
   const workerSelectDisabled = !isAdmin;
+  const zeroWorkInputs = work.comment_type === "開始" || work.comment_type === "コメント";
 
   return (
     <div className="modalBackdrop">
@@ -134,6 +128,7 @@ export function CardModal({
                 inputMode="numeric"
                 placeholder="例: 3 / -1"
                 value={workQtyText}
+                disabled={zeroWorkInputs}
                 onFocus={(event) => event.currentTarget.select()}
                 onChange={(e) => setWorkQtyText(e.target.value)}
               />
@@ -145,19 +140,20 @@ export function CardModal({
                 inputMode="decimal"
                 placeholder="例: 1.5"
                 value={workHoursText}
+                disabled={zeroWorkInputs}
                 onFocus={(event) => event.currentTarget.select()}
                 onChange={(e) => setWorkHoursText(e.target.value)}
               />
             </label>
             <label>
-              コメント種別
-              <select value={work.comment_type} onChange={(e) => setWork({ ...work, comment_type: e.target.value })}>
+              作業分類
+              <select value={work.comment_type} onChange={(e) => updateWorkType(e.target.value)}>
                 {meta.comment_types.map((type) => <option key={type}>{type}</option>)}
               </select>
             </label>
             <label>
               コメント
-              <input placeholder="マイナス入力時は理由必須" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
+              <input placeholder="手戻り・コメント時は必須" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
             </label>
             <button type="submit">登録</button>
           </form>
@@ -205,15 +201,6 @@ export function CardModal({
 
         {!isNew && (
           <div className="modalSections">
-            <form className="workForm" onSubmit={addComment}>
-              <h3>コメント追加</h3>
-              <select value={comment.comment_type} onChange={(e) => setComment({ ...comment, comment_type: e.target.value })}>
-                {meta.comment_types.map((type) => <option key={type}>{type}</option>)}
-              </select>
-              <input value={comment.body} placeholder="コメント" onChange={(e) => setComment({ ...comment, body: e.target.value })} />
-              <button type="submit">追加</button>
-            </form>
-
             <section>
               <h3>コメント</h3>
               <div className="timeline">
@@ -231,12 +218,13 @@ export function CardModal({
               <h3>作業ログ</h3>
               <div className="tableScroll">
                 <table>
-                  <thead><tr><th>日付</th><th>担当</th><th>加工数量</th><th>時間(h)</th><th>コメント</th></tr></thead>
+                  <thead><tr><th>日付</th><th>担当</th><th>作業分類</th><th>加工数量</th><th>時間(h)</th><th>コメント</th></tr></thead>
                   <tbody>
                     {(card.work_logs ?? []).map((log) => (
                       <tr key={log.id}>
                         <td>{log.work_date}</td>
                         <td>{log.assignee_name ?? "-"}</td>
+                        <td>{log.comment_type ?? "-"}</td>
                         <td>{log.completed_qty_delta}</td>
                         <td>{log.work_hours}</td>
                         <td>{log.comment_body ?? ""}</td>
