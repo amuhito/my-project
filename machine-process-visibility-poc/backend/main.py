@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from migrations import init_db
+from routers.admin import router as admin_router
 from routers.auth import router as auth_router
 from routers.cards import router as cards_router
 from routers.meta import router as meta_router
@@ -22,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(meta_router)
+app.include_router(admin_router)
 app.include_router(auth_router)
 app.include_router(cards_router)
 app.include_router(reports_router)

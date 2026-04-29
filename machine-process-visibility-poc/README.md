@@ -29,11 +29,7 @@ API: http://localhost:8000
 
 DBは `backend/machine_poc.sqlite3` に自動作成されます。
 
-## 初期ログイン
+## ログイン
 
-- 管理者: `admin` / `admin123`
-- 三谷: `mitani` / `password`
-- 山本: `yamamoto` / `password`
-- 佐藤: `sato` / `password`
-- 田中: `tanaka` / `password`
-- 鈴木: `suzuki` / `password`
+初期ユーザーは DB 初期化時に作成されます。初回ログイン後にパスワード変更が必要です。
+初期パスワードは管理者から利用者へ個別に共有してください。

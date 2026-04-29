@@ -55,12 +55,16 @@ export function CalendarView({ cards, onOpen }: { cards: Card[]; onOpen: (id: nu
               <>
                 <div className="dayNumber">{Number(day.slice(-2))}</div>
                 <div className="calendarItems">
-                  {(entriesByDay.get(day) ?? []).map(({ card, kind }) => (
-                    <button className={`calendarItem ${isRework(card) ? "rework" : ""}`} key={`${day}-${kind}-${card.id}`} onClick={() => onOpen(card.id)}>
-                      <span>{card.drawing_no}</span>
-                      <small>{kind} / {card.process.name}</small>
-                    </button>
-                  ))}
+                  {(entriesByDay.get(day) ?? []).slice(0, 4).map(({ card, kind }) => {
+                    const late = kind === "納期" && day < todayKey && card.status !== "完了";
+                    return (
+                      <button className={`calendarItem ${kind === "予定" ? "planned" : "due"} ${late ? "late" : ""} ${isRework(card) ? "rework" : ""}`} key={`${day}-${kind}-${card.id}`} onClick={() => onOpen(card.id)}>
+                        <span>{card.drawing_no}</span>
+                        <small>{kind} / {card.process.name}</small>
+                      </button>
+                    );
+                  })}
+                  {(entriesByDay.get(day)?.length ?? 0) > 4 && <div className="calendarMore">+{(entriesByDay.get(day)?.length ?? 0) - 4}件</div>}
                 </div>
               </>
             )}

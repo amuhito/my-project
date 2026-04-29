@@ -19,8 +19,10 @@ export function CardModal({
   onSaved: (id: number) => void;
 }) {
   const isNew = !card.id;
+  const isAdmin = currentUser.role === "admin";
   const [draft, setDraft] = useState<Card | CardDraft>(card);
   const [tagIds, setTagIds] = useState<number[]>(card.tags?.map((tag) => tag.id) ?? []);
+  const [completedQtyReason, setCompletedQtyReason] = useState("");
   const [comment, setComment] = useState({ comment_type: "作業", body: "" });
   const [work, setWork] = useState<WorkFormState>({
     work_date: localDateString(),
@@ -36,9 +38,10 @@ export function CardModal({
     event.preventDefault();
     setError("");
     try {
+      const completedQtyChanged = !isNew && Number(draft.completed_qty) !== Number(card.completed_qty);
       const saved = await request<Card>(isNew ? "/cards" : `/cards/${draft.id}`, {
         method: isNew ? "POST" : "PUT",
-        body: JSON.stringify(toPayload(draft, tagIds)),
+        body: JSON.stringify(toPayload(draft, tagIds, completedQtyChanged ? completedQtyReason : "")),
       });
       onSaved(saved.id);
     } catch (err) {
@@ -85,6 +88,10 @@ export function CardModal({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  const completedQtyChanged = !isNew && Number(draft.completed_qty) !== Number(card.completed_qty);
+  const adminOnlyDisabled = !isAdmin;
+  const workerSelectDisabled = !isAdmin;
+
   return (
     <div className="modalBackdrop">
       <div className="modal">
@@ -97,28 +104,51 @@ export function CardModal({
           <div className="detailSummary">
             <span>カード担当者: <strong>{card.assignee?.name ?? "未設定"}</strong></span>
             <span>ログイン中: <strong>{currentUser.display_name}</strong></span>
+            <span>工程: <strong>{card.process?.name ?? "-"}</strong></span>
+            <span>進捗: <strong>{card.completed_qty}/{card.total_qty}</strong></span>
           </div>
         )}
+        {!isNew && (
+          <form className="workForm priorityWorkForm" onSubmit={addWork}>
+            <h3>作業実績を登録</h3>
+            <DateField label="作業日" value={work.work_date} onChange={(value) => setWork({ ...work, work_date: value })} />
+            <label>
+              作業者
+              <select value={work.assignee_id ?? ""} disabled={workerSelectDisabled} onChange={(e) => setWork({ ...work, assignee_id: e.target.value ? Number(e.target.value) : null })}>
+                <option value="">未設定</option>
+                {meta.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
+              </select>
+            </label>
+            <input type="number" min="0" placeholder="今回完了数" value={work.completed_qty_delta} onChange={(e) => setWork({ ...work, completed_qty_delta: Number(e.target.value) })} />
+            <input type="number" min="0" step="0.25" placeholder="作業時間" value={work.work_hours} onChange={(e) => setWork({ ...work, work_hours: Number(e.target.value) })} />
+            <select value={work.comment_type} onChange={(e) => setWork({ ...work, comment_type: e.target.value })}>
+              {meta.comment_types.map((type) => <option key={type}>{type}</option>)}
+            </select>
+            <input placeholder="コメント" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
+            <button type="submit">登録</button>
+          </form>
+        )}
         <form className="detailGrid" onSubmit={save}>
-          <label>受注番号<input value={draft.order_no ?? ""} placeholder="例: E-25086" pattern="[A-Z]-[0-9]{5}" onChange={(e) => update("order_no", e.target.value.toUpperCase())} /></label>
-          <label>種別<input value={draft.item_type ?? ""} placeholder="例: 01" inputMode="numeric" pattern="[0-9]{2}" maxLength={2} onChange={(e) => update("item_type", e.target.value.replace(/\D/g, "").slice(0, 2))} /></label>
-          <label>図番<input value={draft.drawing_no} onChange={(e) => update("drawing_no", e.target.value)} required /></label>
+          <h3 className="wide">基本情報</h3>
+          <label>受注番号<input value={draft.order_no ?? ""} placeholder="例: E-25086" pattern="[A-Z]-[0-9]{5}" disabled={adminOnlyDisabled} onChange={(e) => update("order_no", e.target.value.toUpperCase())} /></label>
+          <label>種別<input value={draft.item_type ?? ""} placeholder="例: 01" inputMode="numeric" pattern="[0-9]{2}" maxLength={2} disabled={adminOnlyDisabled} onChange={(e) => update("item_type", e.target.value.replace(/\D/g, "").slice(0, 2))} /></label>
+          <label>図番<input value={draft.drawing_no} disabled={adminOnlyDisabled} onChange={(e) => update("drawing_no", e.target.value)} required /></label>
           <label>品名<input value={draft.item_name} onChange={(e) => update("item_name", e.target.value)} required /></label>
-          <label>総数<input type="number" min="0" value={draft.total_qty} onChange={(e) => update("total_qty", Number(e.target.value))} /></label>
-          <label>完了数<input type="number" min="0" value={draft.completed_qty} onChange={(e) => update("completed_qty", Number(e.target.value))} /></label>
+          <label>総数<input type="number" min="0" value={draft.total_qty} disabled={adminOnlyDisabled} onChange={(e) => update("total_qty", Number(e.target.value))} /></label>
+          <label>完了数<input type="number" min="0" value={draft.completed_qty} disabled={adminOnlyDisabled} onChange={(e) => update("completed_qty", Number(e.target.value))} /></label>
           <label>進捗率<input value={`${draft.total_qty ? Math.round((draft.completed_qty / draft.total_qty) * 100) : 0}%`} readOnly /></label>
           <label>現在工程
-            <select value={draft.current_process_id} onChange={(e) => update("current_process_id", Number(e.target.value))}>
+            <select value={draft.current_process_id} disabled={adminOnlyDisabled} onChange={(e) => update("current_process_id", Number(e.target.value))}>
               {meta.processes.map((process) => <option key={process.id} value={process.id}>{process.name}</option>)}
             </select>
           </label>
           <label>ステータス
-            <select value={draft.status} onChange={(e) => update("status", e.target.value as Card["status"])}>
+            <select value={draft.status} disabled={adminOnlyDisabled} onChange={(e) => update("status", e.target.value as Card["status"])}>
               <option>未着手</option><option>作業中</option><option>完了</option>
             </select>
           </label>
           <label>担当者
-            <select value={draft.assignee_id ?? ""} onChange={(e) => update("assignee_id", e.target.value ? Number(e.target.value) : null)}>
+            <select value={draft.assignee_id ?? ""} disabled={adminOnlyDisabled} onChange={(e) => update("assignee_id", e.target.value ? Number(e.target.value) : null)}>
               <option value="">未設定</option>
               {meta.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
             </select>
@@ -140,6 +170,12 @@ export function CardModal({
               </label>
             ))}
           </fieldset>
+          {isAdmin && completedQtyChanged && (
+            <label className="wide">
+              完了数修正理由
+              <input value={completedQtyReason} onChange={(e) => setCompletedQtyReason(e.target.value)} required />
+            </label>
+          )}
           <label className="wide">備考<input value={draft.remarks ?? ""} onChange={(e) => update("remarks", e.target.value)} /></label>
           <label className="wide">説明欄<textarea rows={6} value={draft.description} onChange={(e) => update("description", e.target.value)} /></label>
           <button className="primary" type="submit">保存</button>
@@ -147,25 +183,6 @@ export function CardModal({
 
         {!isNew && (
           <div className="modalSections">
-            <form className="workForm" onSubmit={addWork}>
-              <h3>作業実績を登録</h3>
-              <DateField label="作業日" value={work.work_date} onChange={(value) => setWork({ ...work, work_date: value })} />
-              <label>
-                作業者
-                <select value={work.assignee_id ?? ""} onChange={(e) => setWork({ ...work, assignee_id: e.target.value ? Number(e.target.value) : null })}>
-                  <option value="">未設定</option>
-                  {meta.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
-                </select>
-              </label>
-              <input type="number" min="0" placeholder="今回完了数" value={work.completed_qty_delta} onChange={(e) => setWork({ ...work, completed_qty_delta: Number(e.target.value) })} />
-              <input type="number" min="0" step="0.25" placeholder="作業時間" value={work.work_hours} onChange={(e) => setWork({ ...work, work_hours: Number(e.target.value) })} />
-              <select value={work.comment_type} onChange={(e) => setWork({ ...work, comment_type: e.target.value })}>
-                {meta.comment_types.map((type) => <option key={type}>{type}</option>)}
-              </select>
-              <input placeholder="コメント" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
-              <button type="submit">登録</button>
-            </form>
-
             <form className="workForm" onSubmit={addComment}>
               <h3>コメント追加</h3>
               <select value={comment.comment_type} onChange={(e) => setComment({ ...comment, comment_type: e.target.value })}>

@@ -35,6 +35,15 @@ button:hover,
   border-color: #64748b;
 }
 
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+  background: #f1f5f9;
+}
+
 button:focus-visible,
 .button:focus-visible,
 a:focus-visible,
@@ -81,6 +90,10 @@ textarea:focus-visible,
   color: #64748b;
   font-size: 13px;
   margin: 14px 0 0;
+}
+
+.loginBox button + button {
+  margin-left: 8px;
 }
 
 .topbar {
@@ -140,6 +153,52 @@ main {
   align-items: center;
   margin-bottom: 14px;
   flex-wrap: wrap;
+}
+
+.summaryGrid,
+.subtotalGrid,
+.adminGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.summaryGrid {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  margin-bottom: 12px;
+}
+
+.summaryGrid div,
+.subtotalGrid section,
+.adminItem {
+  background: #ffffff;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.summaryGrid strong {
+  display: block;
+  font-size: 20px;
+}
+
+.summaryGrid span,
+.muted {
+  color: #64748b;
+}
+
+.subtotalGrid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: 12px;
+}
+
+.subtotalGrid h3,
+.subtotalGrid p {
+  margin: 0;
+}
+
+.subtotalGrid p {
+  margin-top: 6px;
+  color: #475569;
 }
 
 .check {
@@ -517,6 +576,28 @@ tbody tr:hover {
   padding: 6px 8px;
 }
 
+.calendarItem.planned {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.calendarItem.due {
+  border-left-color: #ca8a04;
+  background: #fff7ed;
+}
+
+.calendarItem.late {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+  box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.22);
+}
+
+.calendarMore {
+  color: #475569;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
 .calendarItem span,
 .calendarItem small {
   display: block;
@@ -698,6 +779,11 @@ label textarea,
   border-radius: 8px;
 }
 
+.priorityWorkForm {
+  margin-bottom: 14px;
+  background: #f8fafc;
+}
+
 .workForm h3 {
   grid-column: 1 / -1;
 }
@@ -726,6 +812,43 @@ label textarea,
   border-radius: 8px;
   padding: 10px;
   margin-bottom: 12px;
+}
+
+.notice {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.adminGrid {
+  grid-template-columns: 1fr;
+}
+
+.actions,
+.inlineForm,
+.adminItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inlineForm {
+  margin-bottom: 12px;
+}
+
+.inlineForm input,
+.adminItem input {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.compactList {
+  gap: 8px;
 }
 
 .report {

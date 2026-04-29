@@ -7,11 +7,13 @@ export function BoardView({
   processes,
   onOpen,
   onMove,
+  canMove,
 }: {
   cards: Card[];
   processes: Process[];
   onOpen: (id: number) => void;
   onMove: (card: Card, process: Process) => void;
+  canMove: boolean;
 }) {
   const [draggingCardId, setDraggingCardId] = useState<number | null>(null);
   const [dropProcessId, setDropProcessId] = useState<number | null>(null);
@@ -19,6 +21,7 @@ export function BoardView({
   function handleDrop(event: DragEvent<HTMLDivElement>, process: Process) {
     event.preventDefault();
     setDropProcessId(null);
+    if (!canMove) return;
     const cardId = Number(event.dataTransfer.getData("text/plain"));
     const card = cards.find((item) => item.id === cardId);
     if (card) onMove(card, process);
@@ -33,6 +36,7 @@ export function BoardView({
             className={`column ${dropProcessId === process.id ? "dropTarget" : ""}`}
             key={process.id}
             onDragOver={(event) => {
+              if (!canMove) return;
               event.preventDefault();
               setDropProcessId(process.id);
             }}
@@ -53,7 +57,7 @@ export function BoardView({
                   card={card}
                   key={card.id}
                   onOpen={onOpen}
-                  draggable
+                  draggable={canMove}
                   dragging={draggingCardId === card.id}
                   onDragStart={() => setDraggingCardId(card.id)}
                   onDragEnd={() => {

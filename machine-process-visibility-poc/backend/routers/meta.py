@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
-from auth import current_user
+from auth import require_ready_user
 from constants import COMMENT_TYPES
 from database import db
 
@@ -18,7 +18,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/meta")
-def meta(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
+def meta(user: dict[str, Any] = Depends(require_ready_user)) -> dict[str, Any]:
     with db() as conn:
         return {
             "processes": [dict(row) for row in conn.execute("SELECT * FROM processes ORDER BY sort_order")],

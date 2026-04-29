@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
 
-from auth import current_user
+from auth import require_ready_user
 from database import db
 from utils import escape_csv_cell
 
@@ -20,7 +20,7 @@ def daily_report(
     work_date: Optional[str] = Query(None),
     assignee_id: Optional[int] = Query(None),
     process_id: Optional[int] = Query(None),
-    user: dict[str, Any] = Depends(current_user),
+    user: dict[str, Any] = Depends(require_ready_user),
 ) -> list[dict[str, Any]]:
     target_date = work_date or date.today().isoformat()
     where = ["wl.work_date = ?"]
@@ -40,6 +40,7 @@ def daily_report(
                     wl.work_date, wl.completed_qty_delta, wl.work_hours, wl.created_at,
                     cards.order_no, cards.item_type, cards.drawing_no, cards.item_name, cards.remarks,
                     assignees.name AS assignee_name,
+                    users.display_name AS registered_by_name,
                     processes.name AS process_name,
                     comments.body AS comment,
                     comments.comment_type,
@@ -47,6 +48,7 @@ def daily_report(
                 FROM work_logs wl
                 JOIN cards ON cards.id = wl.card_id
                 LEFT JOIN assignees ON assignees.id = wl.assignee_id
+                LEFT JOIN users ON users.id = wl.registered_by_user_id
                 LEFT JOIN processes ON processes.id = COALESCE(wl.process_id, cards.current_process_id)
                 LEFT JOIN comments ON comments.id = wl.comment_id
                 WHERE {" AND ".join(where)}
@@ -62,7 +64,7 @@ def daily_report_csv(
     work_date: Optional[str] = Query(None),
     assignee_id: Optional[int] = Query(None),
     process_id: Optional[int] = Query(None),
-    user: dict[str, Any] = Depends(current_user),
+    user: dict[str, Any] = Depends(require_ready_user),
 ) -> Response:
     rows = daily_report(work_date, assignee_id, process_id)
     output = StringIO()
@@ -71,6 +73,7 @@ def daily_report_csv(
         fieldnames=[
             "work_date",
             "assignee_name",
+            "registered_by_name",
             "process_name",
             "order_no",
             "item_type",
@@ -90,5 +93,5 @@ def daily_report_csv(
     return Response(
         content="\ufeff" + output.getvalue(),
         media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="daily_report.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="daily_report_{work_date or date.today().isoformat()}.csv"'},
     )

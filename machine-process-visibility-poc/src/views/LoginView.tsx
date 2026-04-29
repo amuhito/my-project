@@ -1,8 +1,8 @@
 import { FormEvent, useState } from "react";
 
 export function LoginView({ error, onLogin }: { error: string; onLogin: (username: string, password: string) => void }) {
-  const [username, setUsername] = useState("mitani");
-  const [password, setPassword] = useState("password");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -23,7 +23,6 @@ export function LoginView({ error, onLogin }: { error: string; onLogin: (usernam
         </label>
         {error && <div className="error">{error}</div>}
         <button className="primary" type="submit">ログイン</button>
-        <p>PoC初期ユーザー: mitani / password</p>
       </form>
     </div>
   );

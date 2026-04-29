@@ -22,6 +22,7 @@ class CardPayload(BaseModel):
     due_date: Optional[str] = None
     description: str = DESCRIPTION_TEMPLATE
     tag_ids: list[int] = []
+    completed_qty_reason: str = ""
 
 
 class CommentPayload(BaseModel):
@@ -42,3 +43,23 @@ class WorkResultPayload(BaseModel):
 class LoginPayload(BaseModel):
     username: str
     password: str
+
+
+class ChangePasswordPayload(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ActivePayload(BaseModel):
+    active: bool
+
+
+class AssigneePayload(BaseModel):
+    name: str
+    color: str = "#64748b"
+    active: bool = True
+
+
+class TagPayload(BaseModel):
+    name: str
+    color: str = "#64748b"

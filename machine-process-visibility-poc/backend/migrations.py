@@ -36,9 +36,9 @@ def sync_process_master(conn: sqlite3.Connection) -> None:
 
 def sync_seed_card_metadata(conn: sqlite3.Connection) -> None:
     seed_metadata = {
-        "SH-208500L2": ("ORD-2026-001", "加工品", "内面研磨優先"),
-        "HB-110470": ("ORD-2026-002", "刃物", ""),
-        "RW-001": ("ORD-2026-003", "追加工", "外注戻り後の追加工"),
+        "SH-208500L2": ("E-25086", "01", "内面研磨優先"),
+        "HB-110470": ("S-26654", "02", ""),
+        "RW-001": ("P-66538", "03", "外注戻り後の追加工"),
     }
     for drawing_no, (order_no, item_type, remarks) in seed_metadata.items():
         conn.execute(
@@ -110,6 +110,7 @@ def init_db() -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
                 assignee_id INTEGER REFERENCES assignees(id),
+                registered_by_user_id INTEGER REFERENCES users(id),
                 process_id INTEGER REFERENCES processes(id),
                 work_date TEXT NOT NULL,
                 completed_qty_delta INTEGER NOT NULL CHECK(completed_qty_delta >= 0),
@@ -125,11 +126,23 @@ def init_db() -> None:
                 assignee_id INTEGER REFERENCES assignees(id),
                 role TEXT NOT NULL DEFAULT 'operator',
                 active INTEGER NOT NULL DEFAULT 1,
+                password_must_change INTEGER NOT NULL DEFAULT 1,
+                password_changed_at TEXT,
                 created_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS card_audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id),
+                action TEXT NOT NULL,
+                before_json TEXT,
+                after_json TEXT,
                 created_at TEXT NOT NULL
             );
             """
@@ -139,6 +152,11 @@ def init_db() -> None:
         ensure_column(conn, "cards", "item_type", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "cards", "remarks", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "work_logs", "process_id", "INTEGER REFERENCES processes(id)")
+        ensure_column(conn, "work_logs", "registered_by_user_id", "INTEGER REFERENCES users(id)")
+        ensure_column(conn, "users", "password_must_change", "INTEGER NOT NULL DEFAULT 1")
+        ensure_column(conn, "users", "password_changed_at", "TEXT")
+        ensure_column(conn, "sessions", "expires_at", "TEXT")
+        conn.execute("UPDATE sessions SET expires_at = ? WHERE expires_at IS NULL OR expires_at = ''", (now_iso(),))
         sync_seed_card_metadata(conn)
 
         if not table_has_rows(conn, "processes"):
@@ -176,9 +194,9 @@ def init_db() -> None:
         if not table_has_rows(conn, "cards"):
             today = date.today()
             seed_cards = [
-                ("ORD-2026-001", "加工品", "SH-208500L2", "シュート", "内面研磨優先", 61, 15, "内面研磨", "作業中", "三谷", today, today + timedelta(days=5), ["至急"]),
-                ("ORD-2026-002", "刃物", "HB-110470", "平刃", "", 8, 0, "刃物研磨", "未着手", "山本", today + timedelta(days=1), today + timedelta(days=7), ["厳守"]),
-                ("ORD-2026-003", "追加工", "RW-001", "外注戻り追加工品", "外注戻り後の追加工", 3, 0, "機械加工", "未着手", "佐藤", today + timedelta(days=2), today + timedelta(days=4), ["追加工", "外注戻り"]),
+                ("E-25086", "01", "SH-208500L2", "シュート", "内面研磨優先", 61, 15, "内面研磨", "作業中", "三谷", today, today + timedelta(days=5), ["至急"]),
+                ("S-26654", "02", "HB-110470", "平刃", "", 8, 0, "刃物研磨", "未着手", "山本", today + timedelta(days=1), today + timedelta(days=7), ["厳守"]),
+                ("P-66538", "03", "RW-001", "外注戻り追加工品", "外注戻り後の追加工", 3, 0, "機械加工", "未着手", "佐藤", today + timedelta(days=2), today + timedelta(days=4), ["追加工", "外注戻り"]),
             ]
             for order_no, item_type, drawing_no, item_name, remarks, total, done, process, status, assignee, planned, due, tag_names in seed_cards:
                 process_id = conn.execute("SELECT id FROM processes WHERE name = ?", (process,)).fetchone()["id"]
@@ -217,17 +235,17 @@ def init_db() -> None:
         if not table_has_rows(conn, "users"):
             assignees = {row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM assignees").fetchall()}
             users = [
-                ("admin", "管理者", hash_password("admin123"), None, "admin", 1, now_iso()),
-                ("mitani", "三谷", hash_password(DEFAULT_PASSWORD), assignees.get("三谷"), "operator", 1, now_iso()),
-                ("yamamoto", "山本", hash_password(DEFAULT_PASSWORD), assignees.get("山本"), "operator", 1, now_iso()),
-                ("sato", "佐藤", hash_password(DEFAULT_PASSWORD), assignees.get("佐藤"), "operator", 1, now_iso()),
-                ("tanaka", "田中", hash_password(DEFAULT_PASSWORD), assignees.get("田中"), "operator", 1, now_iso()),
-                ("suzuki", "鈴木", hash_password(DEFAULT_PASSWORD), assignees.get("鈴木"), "operator", 1, now_iso()),
+                ("admin", "管理者", hash_password("admin123"), None, "admin", 1, 1, None, now_iso()),
+                ("mitani", "三谷", hash_password(DEFAULT_PASSWORD), assignees.get("三谷"), "operator", 1, 1, None, now_iso()),
+                ("yamamoto", "山本", hash_password(DEFAULT_PASSWORD), assignees.get("山本"), "operator", 1, 1, None, now_iso()),
+                ("sato", "佐藤", hash_password(DEFAULT_PASSWORD), assignees.get("佐藤"), "operator", 1, 1, None, now_iso()),
+                ("tanaka", "田中", hash_password(DEFAULT_PASSWORD), assignees.get("田中"), "operator", 1, 1, None, now_iso()),
+                ("suzuki", "鈴木", hash_password(DEFAULT_PASSWORD), assignees.get("鈴木"), "operator", 1, 1, None, now_iso()),
             ]
             conn.executemany(
                 """
-                INSERT INTO users(username, display_name, password_hash, assignee_id, role, active, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users(username, display_name, password_hash, assignee_id, role, active, password_must_change, password_changed_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 users,
             )

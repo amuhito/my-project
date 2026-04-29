@@ -4,9 +4,11 @@ import { CardModal } from "./components/CardModal";
 import type { AuthUser, Card, CardDraft, LoginResponse, Meta, Process, ProcessSortMode, View } from "./types";
 import { emptyCard, isRework, PROCESS_VIEW_NAMES, toPayload } from "./utils/card";
 import { AssigneeView } from "./views/AssigneeView";
+import { AdminView } from "./views/AdminView";
 import { BoardView } from "./views/BoardView";
 import { CalendarView } from "./views/CalendarView";
 import { LoginView } from "./views/LoginView";
+import { PasswordChangeView } from "./views/PasswordChangeView";
 import { ProcessView } from "./views/ProcessView";
 import { ReportView } from "./views/ReportView";
 
@@ -38,7 +40,9 @@ export function App() {
     });
     setToken(result.token);
     setUser(result.user);
-    await load();
+    if (!result.user.password_must_change) {
+      await load();
+    }
   }
 
   async function handleLogout() {
@@ -124,6 +128,21 @@ export function App() {
     return <LoginView error={error} onLogin={(username, password) => handleLogin(username, password).catch((err) => setError(err.message))} />;
   }
 
+  if (user.password_must_change) {
+    return (
+      <PasswordChangeView
+        user={user}
+        onChanged={(nextUser) => {
+          setUser(nextUser);
+          load().catch((err) => setError(err.message));
+        }}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  const isAdmin = user.role === "admin";
+
   return (
     <div className="app">
       <header className="topbar">
@@ -138,12 +157,13 @@ export function App() {
             ["assignee", "担当者別"],
             ["calendar", "カレンダー"],
             ["report", "日報"],
+            ...(isAdmin ? [["admin", "管理"]] : []),
           ].map(([key, label]) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key as View)}>
               {label}
             </button>
           ))}
-          <span className="userBadge">{user.display_name}</span>
+          <span className="userBadge">{user.display_name} / {isAdmin ? "admin" : "operator"}</span>
           <button onClick={handleLogout}>ログアウト</button>
         </nav>
       </header>
@@ -151,7 +171,7 @@ export function App() {
       <main>
         {error && <div className="error">{error}</div>}
         <div className="toolbar">
-          <button onClick={() => setSelectedCard(emptyCard(meta))}>カード作成</button>
+          {isAdmin && <button onClick={() => setSelectedCard(emptyCard(meta))}>カード作成</button>}
           <label className="check">
             <input type="checkbox" checked={reworkOnly} onChange={(event) => setReworkOnly(event.target.checked)} />
             追加工のみ
@@ -163,7 +183,7 @@ export function App() {
             </label>
           )}
         </div>
-        {view === "board" && <BoardView cards={visibleCards} processes={meta.processes} onOpen={openCard} onMove={moveCard} />}
+        {view === "board" && <BoardView cards={visibleCards} processes={meta.processes} onOpen={openCard} onMove={moveCard} canMove={isAdmin} />}
         {view === "process" && (
           <ProcessView
             cards={visibleCards}
@@ -179,6 +199,7 @@ export function App() {
         {view === "assignee" && <AssigneeView cards={visibleCards} assignees={meta.assignees} onOpen={openCard} />}
         {view === "calendar" && <CalendarView cards={visibleCards} onOpen={openCard} />}
         {view === "report" && <ReportView meta={meta} />}
+        {view === "admin" && isAdmin && <AdminView meta={meta} onMetaChanged={load} />}
       </main>
 
       {selectedCard && (

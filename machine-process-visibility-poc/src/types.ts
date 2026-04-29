@@ -47,6 +47,7 @@ export type WorkLog = {
 export type ReportRow = {
   work_date: string;
   assignee_name: string;
+  registered_by_name: string;
   process_name: string;
   order_no: string;
   item_type: string;
@@ -61,7 +62,7 @@ export type ReportRow = {
 };
 
 export type Meta = { processes: Process[]; assignees: Assignee[]; tags: Tag[]; comment_types: string[] };
-export type View = "board" | "process" | "assignee" | "calendar" | "report";
+export type View = "board" | "process" | "assignee" | "calendar" | "report" | "admin";
 export type ProcessSortMode = "due" | "assignee";
 
 export type AuthUser = {
@@ -71,9 +72,23 @@ export type AuthUser = {
   assignee_id: number | null;
   assignee: Assignee | null;
   role: string;
+  password_must_change: boolean;
 };
 
 export type LoginResponse = { token: string; user: AuthUser };
+
+export type AdminUser = {
+  id: number;
+  username: string;
+  display_name: string;
+  assignee_id: number | null;
+  assignee_name: string | null;
+  role: string;
+  active: number;
+  password_must_change: number;
+  password_changed_at: string | null;
+  created_at: string;
+};
 
 export type WorkFormState = {
   work_date: string;
