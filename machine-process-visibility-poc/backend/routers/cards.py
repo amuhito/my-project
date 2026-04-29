@@ -23,7 +23,6 @@ ADMIN_ONLY_CARD_FIELDS = {
     "drawing_no",
     "total_qty",
     "current_process_id",
-    "status",
     "assignee_id",
 }
 
@@ -153,12 +152,14 @@ def update_card(card_id: int, payload: CardPayload, user: dict[str, Any] = Depen
             raise HTTPException(status_code=403, detail="この項目の変更には管理者権限が必要です")
         if "completed_qty" in changed:
             raise HTTPException(status_code=400, detail="完了数は作業実績の数量増減で更新してください")
+        if "status" in changed:
+            raise HTTPException(status_code=400, detail="ステータスは作業実績の登録に連動して更新します")
         conn.execute(
             """
             UPDATE cards SET
                 order_no = ?, item_type = ?, drawing_no = ?, item_name = ?, remarks = ?,
                 total_qty = ?,
-                current_process_id = ?, status = ?, assignee_id = ?, planned_work_date = ?,
+                current_process_id = ?, assignee_id = ?, planned_work_date = ?,
                 due_date = ?, description = ?, updated_at = ?
             WHERE id = ?
             """,
@@ -170,7 +171,6 @@ def update_card(card_id: int, payload: CardPayload, user: dict[str, Any] = Depen
                 payload.remarks.strip(),
                 payload.total_qty,
                 payload.current_process_id,
-                payload.status,
                 payload.assignee_id,
                 payload.planned_work_date,
                 payload.due_date,

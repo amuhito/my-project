@@ -174,11 +174,6 @@ export function CardModal({
               {meta.processes.map((process) => <option key={process.id} value={process.id}>{process.name}</option>)}
             </select>
           </label>
-          <label>ステータス
-            <select value={draft.status} disabled={adminOnlyDisabled} onChange={(e) => update("status", e.target.value as Card["status"])}>
-              <option>未着手</option><option>作業中</option><option>完了</option>
-            </select>
-          </label>
           <label>担当者
             <select value={draft.assignee_id ?? ""} disabled={adminOnlyDisabled} onChange={(e) => update("assignee_id", e.target.value ? Number(e.target.value) : null)}>
               <option value="">未設定</option>

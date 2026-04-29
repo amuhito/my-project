@@ -65,12 +65,10 @@ export function App() {
 
   async function moveCard(card: Card, process: Process) {
     if (card.current_process_id === process.id) return;
-    const nextStatus: Card["status"] = process.name === "完了" ? "完了" : process.name === "未振り分け" ? "未着手" : "作業中";
     const movedCard = {
       ...card,
       current_process_id: process.id,
       process,
-      status: nextStatus,
     };
     setCards((current) => current.map((item) => (item.id === card.id ? movedCard : item)));
     setError("");
