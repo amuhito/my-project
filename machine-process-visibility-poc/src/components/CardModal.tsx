@@ -31,6 +31,8 @@ export function CardModal({
     comment_type: "作業",
     comment: "",
   });
+  const [workQtyText, setWorkQtyText] = useState("0");
+  const [workHoursText, setWorkHoursText] = useState("0");
   const [error, setError] = useState("");
 
   async function save(event: FormEvent) {
@@ -67,7 +69,14 @@ export function CardModal({
     if (isNew || !cardId) return;
     setError("");
     try {
-      await request(`/cards/${cardId}/work-results`, { method: "POST", body: JSON.stringify(work) });
+      await request(`/cards/${cardId}/work-results`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...work,
+          completed_qty_delta: Number(workQtyText || 0),
+          work_hours: Number(workHoursText || 0),
+        }),
+      });
       setWork({
         work_date: localDateString(),
         completed_qty_delta: 0,
@@ -76,6 +85,8 @@ export function CardModal({
         comment_type: "作業",
         comment: "",
       });
+      setWorkQtyText("0");
+      setWorkHoursText("0");
       onSaved(cardId);
     } catch (err) {
       setError((err as Error).message);
@@ -117,12 +128,26 @@ export function CardModal({
               </select>
             </label>
             <label>
-              数量増減
-              <input type="number" placeholder="例: 3 / -1" value={work.completed_qty_delta} onChange={(e) => setWork({ ...work, completed_qty_delta: Number(e.target.value) })} />
+              加工数量
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="例: 3 / -1"
+                value={workQtyText}
+                onFocus={(event) => event.currentTarget.select()}
+                onChange={(e) => setWorkQtyText(e.target.value)}
+              />
             </label>
             <label>
-              作業時間
-              <input type="number" min="0" step="0.25" placeholder="時間" value={work.work_hours} onChange={(e) => setWork({ ...work, work_hours: Number(e.target.value) })} />
+              作業時間(h)
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="例: 1.5"
+                value={workHoursText}
+                onFocus={(event) => event.currentTarget.select()}
+                onChange={(e) => setWorkHoursText(e.target.value)}
+              />
             </label>
             <label>
               コメント種別
@@ -211,7 +236,7 @@ export function CardModal({
               <h3>作業ログ</h3>
               <div className="tableScroll">
                 <table>
-                  <thead><tr><th>日付</th><th>担当</th><th>数量増減</th><th>時間</th><th>コメント</th></tr></thead>
+                  <thead><tr><th>日付</th><th>担当</th><th>加工数量</th><th>時間(h)</th><th>コメント</th></tr></thead>
                   <tbody>
                     {(card.work_logs ?? []).map((log) => (
                       <tr key={log.id}>

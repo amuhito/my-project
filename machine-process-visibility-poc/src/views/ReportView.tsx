@@ -103,8 +103,8 @@ export function ReportView({ meta }: { meta: Meta }) {
               <th>種別</th>
               <th>図番</th>
               <th>品名</th>
-              <th>数量増減</th>
-              <th>作業時間</th>
+              <th>加工数量</th>
+              <th>作業時間(h)</th>
               <th>コメント種別</th>
               <th>コメント</th>
               <th>異常・気づき</th>
