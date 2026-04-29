@@ -22,7 +22,6 @@ ADMIN_ONLY_CARD_FIELDS = {
     "item_type",
     "drawing_no",
     "total_qty",
-    "completed_qty",
     "current_process_id",
     "status",
     "assignee_id",
@@ -117,9 +116,9 @@ def create_card(payload: CardPayload, user: dict[str, Any] = Depends(require_rea
                 payload.item_name,
                 payload.remarks.strip(),
                 payload.total_qty,
-                payload.completed_qty,
+                0,
                 payload.current_process_id,
-                payload.status,
+                "未着手",
                 payload.assignee_id,
                 payload.planned_work_date,
                 payload.due_date,
@@ -152,13 +151,13 @@ def update_card(card_id: int, payload: CardPayload, user: dict[str, Any] = Depen
         changed = changed_fields(before, after)
         if user["role"] != "admin" and any(field in ADMIN_ONLY_CARD_FIELDS for field in changed):
             raise HTTPException(status_code=403, detail="この項目の変更には管理者権限が必要です")
-        if "completed_qty" in changed and not payload.completed_qty_reason.strip():
-            raise HTTPException(status_code=400, detail="完了数を直接修正する場合は理由コメントを入力してください")
+        if "completed_qty" in changed:
+            raise HTTPException(status_code=400, detail="完了数は作業実績の数量増減で更新してください")
         conn.execute(
             """
             UPDATE cards SET
                 order_no = ?, item_type = ?, drawing_no = ?, item_name = ?, remarks = ?,
-                total_qty = ?, completed_qty = ?,
+                total_qty = ?,
                 current_process_id = ?, status = ?, assignee_id = ?, planned_work_date = ?,
                 due_date = ?, description = ?, updated_at = ?
             WHERE id = ?
@@ -170,7 +169,6 @@ def update_card(card_id: int, payload: CardPayload, user: dict[str, Any] = Depen
                 payload.item_name,
                 payload.remarks.strip(),
                 payload.total_qty,
-                payload.completed_qty,
                 payload.current_process_id,
                 payload.status,
                 payload.assignee_id,
@@ -190,20 +188,6 @@ def update_card(card_id: int, payload: CardPayload, user: dict[str, Any] = Depen
             write_card_audit(conn, card_id, user["id"], "card_updated", before, updated_snapshot)
         if "current_process_id" in changed:
             write_card_audit(conn, card_id, user["id"], "process_changed", {"current_process_id": before["current_process_id"]}, {"current_process_id": updated_snapshot["current_process_id"]})
-        if "completed_qty" in changed:
-            reason = payload.completed_qty_reason.strip()
-            conn.execute(
-                "INSERT INTO comments(card_id, comment_type, body, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
-                (card_id, "補足", f"完了数手修正: {reason}", user["assignee_id"], now_iso()),
-            )
-            write_card_audit(
-                conn,
-                card_id,
-                user["id"],
-                "completed_qty_adjusted",
-                {"completed_qty": before["completed_qty"]},
-                {"completed_qty": updated_snapshot["completed_qty"], "reason": reason},
-            )
         if "assignee_id" in changed:
             write_card_audit(conn, card_id, user["id"], "assignee_changed", {"assignee_id": before["assignee_id"]}, {"assignee_id": updated_snapshot["assignee_id"]})
         return updated
@@ -234,14 +218,18 @@ def register_work_result(card_id: int, payload: WorkResultPayload, user: dict[st
     work_date = validate_iso_date(payload.work_date, "作業日") or date.today().isoformat()
     if payload.completed_qty_delta == 0 and payload.work_hours == 0 and not payload.comment.strip():
         raise HTTPException(status_code=400, detail="作業実績を入力してください")
+    if payload.completed_qty_delta < 0 and not payload.comment.strip():
+        raise HTTPException(status_code=400, detail="数量をマイナスする場合は理由コメントを入力してください")
     if payload.assignee_id and payload.assignee_id != user["assignee_id"]:
         require_admin(user)
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         card = get_card_or_404(conn, card_id)
         new_completed = card["completed_qty"] + payload.completed_qty_delta
+        if new_completed < 0:
+            raise HTTPException(status_code=400, detail="数量増減後の完了数は0未満にできません")
         if new_completed > card["total_qty"]:
-            raise HTTPException(status_code=400, detail="今回完了数を加えると総数を超えます")
+            raise HTTPException(status_code=400, detail="数量増減後の完了数は総数を超えられません")
         comment_id = None
         worker_id = payload.assignee_id or user["assignee_id"] or card["assignee_id"]
         if payload.comment.strip():
@@ -250,7 +238,7 @@ def register_work_result(card_id: int, payload: WorkResultPayload, user: dict[st
                 (card_id, payload.comment_type, payload.comment.strip(), worker_id, now_iso()),
             )
             comment_id = cur.lastrowid
-        status = "完了" if new_completed >= card["total_qty"] else ("作業中" if new_completed > 0 else card["status"])
+        status = "完了" if new_completed >= card["total_qty"] else ("作業中" if new_completed > 0 else "未着手")
         conn.execute(
             "UPDATE cards SET completed_qty = ?, status = ?, updated_at = ? WHERE id = ?",
             (new_completed, status, now_iso(), card_id),

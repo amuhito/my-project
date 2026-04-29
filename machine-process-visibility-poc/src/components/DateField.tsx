@@ -4,10 +4,12 @@ export function DateField({
   value,
   onChange,
   label,
+  disabled = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   label?: string;
+  disabled?: boolean;
 }) {
   const control = (
     <div className="dateField">
@@ -16,6 +18,7 @@ export function DateField({
         inputMode="numeric"
         placeholder="例: 0425 / 4/25"
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         onBlur={(event) => onChange(normalizeDateInput(event.target.value))}
       />
@@ -23,6 +26,7 @@ export function DateField({
         className="datePicker"
         type="date"
         value={isDatePickerValue(value)}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         aria-label={`${label ?? "日付"}をカレンダーから選択`}
       />

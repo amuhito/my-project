@@ -53,6 +53,40 @@ def sync_seed_card_metadata(conn: sqlite3.Connection) -> None:
         )
 
 
+def allow_negative_work_log_delta(conn: sqlite3.Connection) -> None:
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'work_logs'").fetchone()
+    if not row or "completed_qty_delta >= 0" not in row["sql"]:
+        return
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.executescript(
+        """
+        CREATE TABLE work_logs_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id INTEGER NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            assignee_id INTEGER REFERENCES assignees(id),
+            registered_by_user_id INTEGER REFERENCES users(id),
+            process_id INTEGER REFERENCES processes(id),
+            work_date TEXT NOT NULL,
+            completed_qty_delta INTEGER NOT NULL,
+            work_hours REAL NOT NULL CHECK(work_hours >= 0),
+            comment_id INTEGER REFERENCES comments(id),
+            created_at TEXT NOT NULL
+        );
+        INSERT INTO work_logs_new(
+            id, card_id, assignee_id, registered_by_user_id, process_id, work_date,
+            completed_qty_delta, work_hours, comment_id, created_at
+        )
+        SELECT
+            id, card_id, assignee_id, registered_by_user_id, process_id, work_date,
+            completed_qty_delta, work_hours, comment_id, created_at
+        FROM work_logs;
+        DROP TABLE work_logs;
+        ALTER TABLE work_logs_new RENAME TO work_logs;
+        """
+    )
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
 def init_db() -> None:
     with db() as conn:
         conn.executescript(
@@ -113,7 +147,7 @@ def init_db() -> None:
                 registered_by_user_id INTEGER REFERENCES users(id),
                 process_id INTEGER REFERENCES processes(id),
                 work_date TEXT NOT NULL,
-                completed_qty_delta INTEGER NOT NULL CHECK(completed_qty_delta >= 0),
+                completed_qty_delta INTEGER NOT NULL,
                 work_hours REAL NOT NULL CHECK(work_hours >= 0),
                 comment_id INTEGER REFERENCES comments(id),
                 created_at TEXT NOT NULL
@@ -153,6 +187,7 @@ def init_db() -> None:
         ensure_column(conn, "cards", "remarks", "TEXT NOT NULL DEFAULT ''")
         ensure_column(conn, "work_logs", "process_id", "INTEGER REFERENCES processes(id)")
         ensure_column(conn, "work_logs", "registered_by_user_id", "INTEGER REFERENCES users(id)")
+        allow_negative_work_log_delta(conn)
         ensure_column(conn, "users", "password_must_change", "INTEGER NOT NULL DEFAULT 1")
         ensure_column(conn, "users", "password_changed_at", "TEXT")
         ensure_column(conn, "sessions", "expires_at", "TEXT")

@@ -48,8 +48,8 @@ export function CardTile({
       </div>
       {(card.order_no || card.item_type) && (
         <div className="subMeta">
-          {card.order_no && <span>受注 {card.order_no}</span>}
-          {card.item_type && <span>{card.item_type}</span>}
+          <span><strong>受注</strong>{card.order_no || "-"}</span>
+          <span><strong>種別</strong>{card.item_type || "-"}</span>
         </div>
       )}
       {card.remarks && <p className="remarksLine">{card.remarks}</p>}
@@ -58,11 +58,12 @@ export function CardTile({
       </div>
       <div className="cardFooter">
         {card.assignee ? (
-          <span className="avatar" style={labelStyle(card.assignee.color)} title={card.assignee.name}>
-            {card.assignee.name.slice(0, 1)}
+          <span className="assigneeName" title={card.assignee.name}>
+            <span className="assigneeDot" style={labelStyle(card.assignee.color)} />
+            {card.assignee.name}
           </span>
         ) : (
-          <span className="avatar empty">?</span>
+          <span className="assigneeName mutedText">未設定</span>
         )}
         <span>{percent(card)}</span>
       </div>

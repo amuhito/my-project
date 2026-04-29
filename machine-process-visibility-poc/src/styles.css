@@ -354,8 +354,8 @@ main {
 }
 
 .subMeta {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
   gap: 6px;
   margin-top: 8px;
   color: #64748b;
@@ -367,6 +367,11 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.subMeta strong {
+  color: #334155;
+  margin-right: 4px;
 }
 
 .remarksLine {
@@ -424,6 +429,29 @@ main {
   gap: 8px;
   color: #334155;
   font-size: 12px;
+}
+
+.assigneeName {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assigneeDot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.mutedText {
+  color: #64748b;
+  font-weight: 400;
 }
 
 .avatar {
@@ -777,6 +805,10 @@ label textarea,
   padding: 12px;
   border: 1px solid #dbe3ec;
   border-radius: 8px;
+}
+
+.workForm label {
+  margin: 0;
 }
 
 .priorityWorkForm {

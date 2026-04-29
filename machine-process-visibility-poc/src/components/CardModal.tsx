@@ -22,7 +22,6 @@ export function CardModal({
   const isAdmin = currentUser.role === "admin";
   const [draft, setDraft] = useState<Card | CardDraft>(card);
   const [tagIds, setTagIds] = useState<number[]>(card.tags?.map((tag) => tag.id) ?? []);
-  const [completedQtyReason, setCompletedQtyReason] = useState("");
   const [comment, setComment] = useState({ comment_type: "作業", body: "" });
   const [work, setWork] = useState<WorkFormState>({
     work_date: localDateString(),
@@ -38,10 +37,9 @@ export function CardModal({
     event.preventDefault();
     setError("");
     try {
-      const completedQtyChanged = !isNew && Number(draft.completed_qty) !== Number(card.completed_qty);
       const saved = await request<Card>(isNew ? "/cards" : `/cards/${draft.id}`, {
         method: isNew ? "POST" : "PUT",
-        body: JSON.stringify(toPayload(draft, tagIds, completedQtyChanged ? completedQtyReason : "")),
+        body: JSON.stringify(toPayload(draft, tagIds)),
       });
       onSaved(saved.id);
     } catch (err) {
@@ -88,7 +86,6 @@ export function CardModal({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  const completedQtyChanged = !isNew && Number(draft.completed_qty) !== Number(card.completed_qty);
   const adminOnlyDisabled = !isAdmin;
   const workerSelectDisabled = !isAdmin;
 
@@ -119,12 +116,24 @@ export function CardModal({
                 {meta.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
               </select>
             </label>
-            <input type="number" min="0" placeholder="今回完了数" value={work.completed_qty_delta} onChange={(e) => setWork({ ...work, completed_qty_delta: Number(e.target.value) })} />
-            <input type="number" min="0" step="0.25" placeholder="作業時間" value={work.work_hours} onChange={(e) => setWork({ ...work, work_hours: Number(e.target.value) })} />
-            <select value={work.comment_type} onChange={(e) => setWork({ ...work, comment_type: e.target.value })}>
-              {meta.comment_types.map((type) => <option key={type}>{type}</option>)}
-            </select>
-            <input placeholder="コメント" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
+            <label>
+              数量増減
+              <input type="number" placeholder="例: 3 / -1" value={work.completed_qty_delta} onChange={(e) => setWork({ ...work, completed_qty_delta: Number(e.target.value) })} />
+            </label>
+            <label>
+              作業時間
+              <input type="number" min="0" step="0.25" placeholder="時間" value={work.work_hours} onChange={(e) => setWork({ ...work, work_hours: Number(e.target.value) })} />
+            </label>
+            <label>
+              コメント種別
+              <select value={work.comment_type} onChange={(e) => setWork({ ...work, comment_type: e.target.value })}>
+                {meta.comment_types.map((type) => <option key={type}>{type}</option>)}
+              </select>
+            </label>
+            <label>
+              コメント
+              <input placeholder="マイナス入力時は理由必須" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
+            </label>
             <button type="submit">登録</button>
           </form>
         )}
@@ -133,10 +142,8 @@ export function CardModal({
           <label>受注番号<input value={draft.order_no ?? ""} placeholder="例: E-25086" pattern="[A-Z]-[0-9]{5}" disabled={adminOnlyDisabled} onChange={(e) => update("order_no", e.target.value.toUpperCase())} /></label>
           <label>種別<input value={draft.item_type ?? ""} placeholder="例: 01" inputMode="numeric" pattern="[0-9]{2}" maxLength={2} disabled={adminOnlyDisabled} onChange={(e) => update("item_type", e.target.value.replace(/\D/g, "").slice(0, 2))} /></label>
           <label>図番<input value={draft.drawing_no} disabled={adminOnlyDisabled} onChange={(e) => update("drawing_no", e.target.value)} required /></label>
-          <label>品名<input value={draft.item_name} onChange={(e) => update("item_name", e.target.value)} required /></label>
+          <label>品名<input value={draft.item_name} disabled={adminOnlyDisabled} onChange={(e) => update("item_name", e.target.value)} required /></label>
           <label>総数<input type="number" min="0" value={draft.total_qty} disabled={adminOnlyDisabled} onChange={(e) => update("total_qty", Number(e.target.value))} /></label>
-          <label>完了数<input type="number" min="0" value={draft.completed_qty} disabled={adminOnlyDisabled} onChange={(e) => update("completed_qty", Number(e.target.value))} /></label>
-          <label>進捗率<input value={`${draft.total_qty ? Math.round((draft.completed_qty / draft.total_qty) * 100) : 0}%`} readOnly /></label>
           <label>現在工程
             <select value={draft.current_process_id} disabled={adminOnlyDisabled} onChange={(e) => update("current_process_id", Number(e.target.value))}>
               {meta.processes.map((process) => <option key={process.id} value={process.id}>{process.name}</option>)}
@@ -153,8 +160,8 @@ export function CardModal({
               {meta.assignees.map((assignee) => <option key={assignee.id} value={assignee.id}>{assignee.name}</option>)}
             </select>
           </label>
-          <DateField label="作業予定日" value={draft.planned_work_date ?? ""} onChange={(value) => update("planned_work_date", value)} />
-          <DateField label="納期" value={draft.due_date ?? ""} onChange={(value) => update("due_date", value)} />
+          <DateField label="作業予定日" value={draft.planned_work_date ?? ""} onChange={(value) => update("planned_work_date", value)} disabled={adminOnlyDisabled} />
+          <DateField label="納期" value={draft.due_date ?? ""} onChange={(value) => update("due_date", value)} disabled={adminOnlyDisabled} />
           <fieldset className="tags">
             <legend>タグ</legend>
             {meta.tags.map((tag) => (
@@ -162,6 +169,7 @@ export function CardModal({
                 <input
                   type="checkbox"
                   checked={tagIds.includes(tag.id)}
+                  disabled={adminOnlyDisabled}
                   onChange={(event) => {
                     setTagIds((current) => event.target.checked ? [...current, tag.id] : current.filter((id) => id !== tag.id));
                   }}
@@ -170,15 +178,9 @@ export function CardModal({
               </label>
             ))}
           </fieldset>
-          {isAdmin && completedQtyChanged && (
-            <label className="wide">
-              完了数修正理由
-              <input value={completedQtyReason} onChange={(e) => setCompletedQtyReason(e.target.value)} required />
-            </label>
-          )}
-          <label className="wide">備考<input value={draft.remarks ?? ""} onChange={(e) => update("remarks", e.target.value)} /></label>
-          <label className="wide">説明欄<textarea rows={6} value={draft.description} onChange={(e) => update("description", e.target.value)} /></label>
-          <button className="primary" type="submit">保存</button>
+          <label className="wide">備考<input value={draft.remarks ?? ""} disabled={adminOnlyDisabled} onChange={(e) => update("remarks", e.target.value)} /></label>
+          <label className="wide">説明欄<textarea rows={6} value={draft.description} disabled={adminOnlyDisabled} onChange={(e) => update("description", e.target.value)} /></label>
+          {isAdmin && <button className="primary" type="submit">保存</button>}
         </form>
 
         {!isNew && (
@@ -209,7 +211,7 @@ export function CardModal({
               <h3>作業ログ</h3>
               <div className="tableScroll">
                 <table>
-                  <thead><tr><th>日付</th><th>担当</th><th>完了数</th><th>時間</th><th>コメント</th></tr></thead>
+                  <thead><tr><th>日付</th><th>担当</th><th>数量増減</th><th>時間</th><th>コメント</th></tr></thead>
                   <tbody>
                     {(card.work_logs ?? []).map((log) => (
                       <tr key={log.id}>

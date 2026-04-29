@@ -31,7 +31,7 @@ export function isRework(card: Card) {
   return card.tags.some((tag) => tag.name === "追加工");
 }
 
-export function toPayload(card: Card | CardDraft, tagIds?: number[], completedQtyReason = "") {
+export function toPayload(card: Card | CardDraft, tagIds?: number[]) {
   return {
     order_no: card.order_no ?? "",
     item_type: card.item_type ?? "",
@@ -47,6 +47,5 @@ export function toPayload(card: Card | CardDraft, tagIds?: number[], completedQt
     due_date: card.due_date || null,
     description: card.description,
     tag_ids: tagIds ?? card.tags?.map((tag) => tag.id) ?? ("tag_ids" in card ? card.tag_ids ?? [] : []),
-    completed_qty_reason: completedQtyReason,
   };
 }

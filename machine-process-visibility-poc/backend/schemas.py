@@ -22,7 +22,6 @@ class CardPayload(BaseModel):
     due_date: Optional[str] = None
     description: str = DESCRIPTION_TEMPLATE
     tag_ids: list[int] = []
-    completed_qty_reason: str = ""
 
 
 class CommentPayload(BaseModel):
@@ -32,7 +31,7 @@ class CommentPayload(BaseModel):
 
 
 class WorkResultPayload(BaseModel):
-    completed_qty_delta: int = Field(ge=0)
+    completed_qty_delta: int
     work_hours: float = Field(ge=0)
     assignee_id: Optional[int] = None
     work_date: Optional[str] = None
