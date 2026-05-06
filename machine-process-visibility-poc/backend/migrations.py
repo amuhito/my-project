@@ -9,6 +9,17 @@ from database import db, ensure_column, table_has_rows
 from utils import now_iso
 
 
+VALID_COMMENT_TYPES = ("開始", "作業", "手戻り", "コメント")
+
+
+def normalize_compact_date(value: str | None) -> str | None:
+    if not value:
+        return value
+    if len(value) == 8 and value.isdigit():
+        return f"{value[:4]}-{value[4:6]}-{value[6:8]}"
+    return value
+
+
 def sync_process_master(conn: sqlite3.Connection) -> None:
     if conn.execute("SELECT 1 FROM processes WHERE name = '未着手'").fetchone() and not conn.execute(
         "SELECT 1 FROM processes WHERE name = '未振り分け'"
@@ -117,6 +128,45 @@ def sync_comment_classification_constraint(conn: sqlite3.Connection) -> None:
         """
     )
     conn.execute("PRAGMA foreign_keys = ON")
+
+
+def normalize_existing_poc_data(conn: sqlite3.Connection) -> None:
+    for row in conn.execute("SELECT id, planned_work_date, due_date FROM cards").fetchall():
+        planned_work_date = normalize_compact_date(row["planned_work_date"])
+        due_date = normalize_compact_date(row["due_date"])
+        if planned_work_date != row["planned_work_date"] or due_date != row["due_date"]:
+            conn.execute(
+                "UPDATE cards SET planned_work_date = ?, due_date = ?, updated_at = ? WHERE id = ?",
+                (planned_work_date, due_date, now_iso(), row["id"]),
+            )
+
+    conn.execute(
+        """
+        UPDATE cards
+        SET order_no = '', updated_at = ?
+        WHERE order_no <> '' AND order_no NOT GLOB '[A-Z]-[0-9][0-9][0-9][0-9][0-9]'
+        """,
+        (now_iso(),),
+    )
+    conn.execute(
+        """
+        UPDATE cards
+        SET item_type = '', updated_at = ?
+        WHERE item_type <> '' AND item_type NOT GLOB '[0-9][0-9]'
+        """,
+        (now_iso(),),
+    )
+    sync_seed_card_metadata(conn)
+    conn.execute(
+        """
+        DELETE FROM work_logs
+        WHERE work_type NOT IN (?, ?, ?, ?)
+           OR (work_type = '作業' AND (completed_qty_delta <= 0 OR work_hours <= 0))
+           OR (work_type = '手戻り' AND completed_qty_delta >= 0)
+           OR (work_type IN ('開始', 'コメント') AND (completed_qty_delta != 0 OR work_hours != 0))
+        """,
+        VALID_COMMENT_TYPES,
+    )
 
 
 def init_db() -> None:
@@ -336,3 +386,5 @@ def init_db() -> None:
                 """,
                 users,
             )
+
+        normalize_existing_poc_data(conn)

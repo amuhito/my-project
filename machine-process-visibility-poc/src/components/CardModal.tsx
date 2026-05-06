@@ -93,6 +93,18 @@ export function CardModal({
   const adminOnlyDisabled = !isAdmin;
   const workerSelectDisabled = !isAdmin;
   const zeroWorkInputs = work.comment_type === "開始" || work.comment_type === "コメント";
+  const workQty = Number(workQtyText || 0);
+  const workHours = Number(workHoursText || 0);
+  const workComment = work.comment.trim();
+  const workValidationMessage =
+    work.comment_type === "作業" && (workQty <= 0 || workHours <= 0)
+      ? "作業は加工数量と作業時間を入力してください"
+      : work.comment_type === "手戻り" && (workQty >= 0 || !workComment)
+        ? "手戻りはマイナス数量と理由コメントを入力してください"
+        : work.comment_type === "コメント" && !workComment
+          ? "コメントを入力してください"
+          : "";
+  const workSubmitDisabled = Boolean(workValidationMessage);
 
   return (
     <div className="modalBackdrop">
@@ -155,7 +167,8 @@ export function CardModal({
               コメント
               <input placeholder="手戻り・コメント時は必須" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
             </label>
-            <button type="submit">登録</button>
+            {workValidationMessage && <p className="formHint">{workValidationMessage}</p>}
+            <button type="submit" disabled={workSubmitDisabled}>登録</button>
           </form>
         )}
         <form className="detailGrid" onSubmit={save}>

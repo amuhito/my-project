@@ -205,6 +205,8 @@ main {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .board {
@@ -214,6 +216,12 @@ main {
   overflow-x: auto;
   padding: 4px 2px 14px;
   min-height: calc(100vh - 170px);
+}
+
+.formHint {
+  color: #b45309;
+  font-size: 12px;
+  margin: 0;
 }
 
 .column,
