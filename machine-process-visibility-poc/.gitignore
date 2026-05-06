@@ -3,4 +3,5 @@ dist/
 .venv/
 backend/*.sqlite3
 __pycache__/
+.pytest_cache/
 .DS_Store

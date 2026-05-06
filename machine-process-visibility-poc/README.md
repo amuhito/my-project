@@ -71,6 +71,8 @@ python -m compileall backend
 npm run build
 ```
 
+共通の開発手順はリポジトリルートの `docs/development.md` にもまとめています。
+
 PR検証で別の仮想環境を使う場合:
 
 ```bash

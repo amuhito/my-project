@@ -20,6 +20,8 @@
 
 将来の整理案は [docs/repo-organization.md](docs/repo-organization.md) を参照してください。
 
+開発・検証コマンドの一覧は [docs/development.md](docs/development.md) を参照してください。
+
 ## 納期確認カンバンPoC
 
 詳細は [delivery-kanban-poc/README.md](delivery-kanban-poc/README.md) を参照してください。
