@@ -1,0 +1,52 @@
+name: Machine Process Visibility PoC
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/machine-process-visibility.yml"
+      - "Makefile"
+      - "docs/development.md"
+      - "machine-process-visibility-poc/**"
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - ".github/workflows/machine-process-visibility.yml"
+      - "Makefile"
+      - "docs/development.md"
+      - "machine-process-visibility-poc/**"
+
+jobs:
+  check:
+    name: Test and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: machine-process-visibility-poc/backend/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: machine-process-visibility-poc/package-lock.json
+
+      - name: Install backend dependencies
+        run: make -C machine-process-visibility-poc setup-backend
+
+      - name: Install frontend dependencies
+        working-directory: machine-process-visibility-poc
+        run: npm ci
+
+      - name: Run validation
+        run: make machine-check

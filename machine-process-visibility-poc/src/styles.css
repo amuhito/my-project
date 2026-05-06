@@ -1,0 +1,919 @@
+:root {
+  color: #172033;
+  background: #eef2f6;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+.button {
+  border: 1px solid #c9d3df;
+  background: #ffffff;
+  color: #172033;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button:hover,
+.button:hover {
+  border-color: #64748b;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+  background: #f1f5f9;
+}
+
+button:focus-visible,
+.button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
+.app {
+  min-height: 100vh;
+}
+
+.boot,
+.loginPage {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.loginBox {
+  width: min(420px, 100%);
+  background: #ffffff;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.12);
+}
+
+.loginBox h1 {
+  font-size: 22px;
+  margin: 0 0 18px;
+}
+
+.loginBox label {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.loginBox p {
+  color: #64748b;
+  font-size: 13px;
+  margin: 14px 0 0;
+}
+
+.loginBox button + button {
+  margin-left: 8px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  padding: 18px 24px;
+  background: #1f2937;
+  color: #ffffff;
+}
+
+.topbar h1 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.topbar p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.topbar nav {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.topbar button {
+  background: #374151;
+  color: #ffffff;
+  border-color: #4b5563;
+}
+
+.topbar button.active {
+  background: #ffffff;
+  color: #111827;
+}
+
+.userBadge {
+  align-self: center;
+  color: #e2e8f0;
+  border: 1px solid #64748b;
+  border-radius: 999px;
+  padding: 6px 10px;
+}
+
+main {
+  padding: 18px;
+}
+
+.toolbar,
+.filters {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.summaryGrid,
+.subtotalGrid,
+.adminGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.summaryGrid {
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  margin-bottom: 12px;
+}
+
+.summaryGrid div,
+.subtotalGrid section,
+.adminItem {
+  background: #ffffff;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.summaryGrid strong {
+  display: block;
+  font-size: 20px;
+}
+
+.summaryGrid span,
+.muted {
+  color: #64748b;
+}
+
+.subtotalGrid {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  margin-bottom: 12px;
+}
+
+.subtotalGrid h3,
+.subtotalGrid p {
+  margin: 0;
+}
+
+.subtotalGrid p {
+  margin-top: 6px;
+  color: #475569;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.board {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  overflow-x: auto;
+  padding: 4px 2px 14px;
+  min-height: calc(100vh - 170px);
+}
+
+.formHint {
+  color: #b45309;
+  font-size: 12px;
+  margin: 0;
+}
+
+.column,
+.panel,
+.day {
+  background: #f8fafc;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.column {
+  flex: 0 0 286px;
+  min-height: 260px;
+  max-height: calc(100vh - 188px);
+  overflow-y: auto;
+  background: #e7edf5;
+  border-color: #d1dae6;
+  padding: 10px;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.column.dropTarget {
+  background: #dce8f7;
+  border-color: #2563eb;
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.16);
+}
+
+.columnHeader {
+  position: sticky;
+  top: -10px;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 10px;
+  background: #e7edf5;
+}
+
+.column.dropTarget .columnHeader {
+  background: #dce8f7;
+}
+
+.columnHeader span {
+  min-width: 26px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  color: #334155;
+  text-align: center;
+  font-size: 12px;
+  padding: 2px 7px;
+}
+
+.column h2,
+.panel h2,
+.day h2 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+
+.columnList,
+.list,
+.timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #d7dee8;
+  border-left: 4px solid transparent;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+  transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+}
+
+.card[draggable="true"] {
+  cursor: grab;
+}
+
+.card[draggable="true"]:hover {
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.14);
+  transform: translateY(-1px);
+}
+
+.card[draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.card.dragging {
+  opacity: 0.58;
+  transform: rotate(1deg);
+}
+
+.card.rework,
+.calendarItem.rework {
+  border-left-color: #e11d48;
+  background: #fff7f8;
+  box-shadow: inset 0 0 0 1px rgba(225, 29, 72, 0.14), 0 1px 2px rgba(15, 23, 42, 0.1);
+}
+
+.cardHead,
+.metaLine {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.cardHead > div {
+  min-width: 0;
+}
+
+.cardHead strong {
+  font-size: 15px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.cardHead span {
+  flex: 0 0 auto;
+  color: #475569;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.card p {
+  color: #475569;
+  font-size: 13px;
+  margin: 4px 0 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.subMeta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 58px;
+  gap: 6px;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.subMeta span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subMeta strong {
+  color: #334155;
+  margin-right: 4px;
+}
+
+.remarksLine {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardLabels,
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 8px;
+}
+
+.label,
+.tagStrip {
+  color: #ffffff;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.tagStrip {
+  min-width: 44px;
+  text-align: center;
+}
+
+.progress {
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 10px 0 8px;
+}
+
+.progress div {
+  height: 100%;
+  background: #22c55e;
+}
+
+.metaLine {
+  color: #475569;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+}
+
+.assigneeName {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assigneeDot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.mutedText {
+  color: #64748b;
+  font-weight: 400;
+}
+
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.avatar.empty {
+  background: #94a3b8;
+}
+
+.processGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+}
+
+.assigneeLane {
+  background: #ffffff;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.assigneeLane h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  margin: 0 0 10px;
+}
+
+table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.tableScroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.tableScroll table {
+  min-width: 760px;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 8px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+tbody tr {
+  cursor: pointer;
+}
+
+tbody tr:hover {
+  background: #f8fafc;
+}
+
+.dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.calendarToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.calendarToolbar h2 {
+  margin: 0 8px 0 0;
+  min-width: 150px;
+}
+
+.monthCalendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.weekday,
+.dayCell {
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.weekday:nth-child(7n),
+.dayCell:nth-child(7n) {
+  border-right: 0;
+}
+
+.weekday {
+  background: #eef2f6;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  padding: 8px;
+}
+
+.dayCell {
+  min-height: 132px;
+  padding: 8px;
+}
+
+.dayCell.empty {
+  background: #f8fafc;
+}
+
+.dayCell.today {
+  box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.28);
+}
+
+.dayNumber {
+  color: #334155;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.calendarItems {
+  display: grid;
+  gap: 6px;
+}
+
+.calendarItem {
+  display: block;
+  width: 100%;
+  border-left: 5px solid #64748b;
+  text-align: left;
+  padding: 6px 8px;
+}
+
+.calendarItem.planned {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+
+.calendarItem.due {
+  border-left-color: #ca8a04;
+  background: #fff7ed;
+}
+
+.calendarItem.late {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+  box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.22);
+}
+
+.calendarMore {
+  color: #475569;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.calendarItem span,
+.calendarItem small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.calendarItem span {
+  font-weight: 700;
+}
+
+.calendarItem small {
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.calendarEmptyNote {
+  color: #64748b;
+  margin-top: 10px;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px;
+  overflow: auto;
+}
+
+.modal {
+  position: relative;
+  z-index: 1001;
+  width: min(1120px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 18px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
+}
+
+.modalHead {
+  position: sticky;
+  top: -18px;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: -18px 0 12px;
+  padding: 18px 0 12px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.detailSummary {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #f8fafc;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+  color: #475569;
+}
+
+.modalHead h2,
+.workForm h3,
+.modalSections h3 {
+  margin: 0;
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+label {
+  color: #334155;
+}
+
+label input,
+label select,
+label textarea,
+.filters input,
+.filters select,
+.workForm input,
+.workForm select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px;
+  background: #ffffff;
+}
+
+.dateField {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 44px;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.filters .dateField {
+  margin-top: 0;
+  width: 210px;
+}
+
+.dateField input {
+  margin-top: 0;
+}
+
+.datePicker {
+  min-width: 44px;
+  padding: 8px 4px;
+  color: transparent;
+  cursor: pointer;
+}
+
+.datePicker::-webkit-datetime-edit,
+.datePicker::-webkit-datetime-edit-fields-wrapper,
+.datePicker::-webkit-datetime-edit-text,
+.datePicker::-webkit-datetime-edit-month-field,
+.datePicker::-webkit-datetime-edit-day-field,
+.datePicker::-webkit-datetime-edit-year-field {
+  display: none;
+}
+
+.datePicker::-webkit-calendar-picker-indicator {
+  margin: 0 auto;
+  cursor: pointer;
+}
+
+.wide,
+.tags {
+  grid-column: 1 / -1;
+}
+
+.tags {
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px;
+}
+
+.tagChoice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.primary {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.modalSections {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.workForm {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 1fr 2fr auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+}
+
+.workForm label {
+  margin: 0;
+}
+
+.priorityWorkForm {
+  margin-bottom: 14px;
+  background: #f8fafc;
+}
+
+.workForm h3 {
+  grid-column: 1 / -1;
+}
+
+.timeline article {
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.timeline article span {
+  color: #64748b;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.timeline article p {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.error {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.notice {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.adminGrid {
+  grid-template-columns: 1fr;
+}
+
+.actions,
+.inlineForm,
+.adminItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inlineForm {
+  margin-bottom: 12px;
+}
+
+.inlineForm input,
+.adminItem input {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.compactList {
+  gap: 8px;
+}
+
+.report {
+  min-width: 1120px;
+}
+
+@media (max-width: 900px) {
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .board {
+    flex-direction: column;
+    overflow-x: visible;
+  }
+
+  .column {
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: none;
+  }
+
+  .detailGrid,
+  .workForm {
+    grid-template-columns: 1fr;
+  }
+}
