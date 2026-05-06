@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-$projectRoot = Split-Path -Parent $PSScriptRoot
-$appRoot = Join-Path $projectRoot "delivery-kanban-poc"
+$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$appRoot = Join-Path $projectRoot "apps\delivery-kanban"
 $frontendDir = Join-Path $appRoot "frontend"
 $envFile = Join-Path $frontendDir ".env"
 $envExampleFile = Join-Path $frontendDir ".env.example"

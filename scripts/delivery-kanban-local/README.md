@@ -1,26 +1,26 @@
 # Delivery Kanban Local
 
-このフォルダは、`delivery-kanban-poc` をローカル PC 上で起動するためのローカル向けパッケージです。
-`machine-process-visibility-poc` など、他のPoCの起動には使いません。
+このフォルダは、`apps/delivery-kanban` をローカル PC 上で起動するためのローカル向けパッケージです。
+`apps/machine-process-visibility` など、他のPoCの起動には使いません。
 
 アプリ本体は次のフォルダを使います。
 
-- [backend](C:\Users\A000594001\my-project\delivery-kanban-poc\backend)
-- [frontend](C:\Users\A000594001\my-project\delivery-kanban-poc\frontend)
+- [backend](C:\Users\A000594001\my-project\apps\delivery-kanban\backend)
+- [frontend](C:\Users\A000594001\my-project\apps\delivery-kanban\frontend)
 
 ## 使い方
 
 ### まとめて起動
 
 ```powershell
-cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
+cd C:\Users\A000594001\my-project\scripts\delivery-kanban-local
 powershell -ExecutionPolicy Bypass -File .\start-local.ps1
 ```
 
 または:
 
 ```powershell
-cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
+cd C:\Users\A000594001\my-project\scripts\delivery-kanban-local
 .\start-local.cmd
 ```
 
@@ -31,14 +31,14 @@ cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
 バックエンドだけ起動する場合:
 
 ```powershell
-cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
+cd C:\Users\A000594001\my-project\scripts\delivery-kanban-local
 .\start-backend.cmd
 ```
 
 フロントエンドだけ起動する場合:
 
 ```powershell
-cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
+cd C:\Users\A000594001\my-project\scripts\delivery-kanban-local
 .\start-frontend.cmd
 ```
 
@@ -52,4 +52,4 @@ cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
 - 初回起動時は必要に応じて `python -m venv .venv`、`pip install -r requirements.txt`、`npm.cmd install` を自動実行します
 - PowerShell の実行ポリシー対策として、`-ExecutionPolicy Bypass` 前提で起動する構成です
 - ローカル版はクラウド版と同じアプリ本体を使うため、機能差分はありません
-- スクリプト内では、親ディレクトリ配下の `delivery-kanban-poc/backend` と `delivery-kanban-poc/frontend` を参照します
+- スクリプト内では、リポジトリルート配下の `apps/delivery-kanban/backend` と `apps/delivery-kanban/frontend` を参照します

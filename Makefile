@@ -1,6 +1,6 @@
 .PHONY: help machine-install machine-dev-backend machine-dev-frontend machine-test machine-compile machine-build machine-check
 
-MACHINE_APP_DIR := machine-process-visibility-poc
+MACHINE_APP_DIR := apps/machine-process-visibility
 
 help:
 	@echo "Targets:"

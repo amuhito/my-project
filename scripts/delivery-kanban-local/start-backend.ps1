@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-$projectRoot = Split-Path -Parent $PSScriptRoot
-$appRoot = Join-Path $projectRoot "delivery-kanban-poc"
+$projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$appRoot = Join-Path $projectRoot "apps\delivery-kanban"
 $backendDir = Join-Path $appRoot "backend"
 $pythonExe = Join-Path $backendDir ".venv\Scripts\python.exe"
 

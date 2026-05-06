@@ -6,17 +6,17 @@
 
 | 対象 | ディレクトリ | backend | frontend |
 | --- | --- | --- | --- |
-| 納期確認カンバンPoC | `delivery-kanban-poc/` | `delivery-kanban-poc/backend/` | `delivery-kanban-poc/frontend/` |
-| 機械課 工程見える化PoC | `machine-process-visibility-poc/` | `machine-process-visibility-poc/backend/` | `machine-process-visibility-poc/` |
+| 納期確認カンバンPoC | `apps/delivery-kanban/` | `apps/delivery-kanban/backend/` | `apps/delivery-kanban/frontend/` |
+| 機械課 工程見える化PoC | `apps/machine-process-visibility/` | `apps/machine-process-visibility/backend/` | `apps/machine-process-visibility/` |
 
-`delivery-kanban-poc-local/` は、`delivery-kanban-poc/` 専用のWindows向け起動補助です。機械課PoCの起動には使いません。
+`scripts/delivery-kanban-local/` は、`apps/delivery-kanban/` 専用のWindows向け起動補助です。機械課PoCの起動には使いません。
 
 ## 納期確認カンバンPoC
 
 backend:
 
 ```bash
-cd delivery-kanban-poc/backend
+cd apps/delivery-kanban/backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
@@ -26,7 +26,7 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 frontend:
 
 ```bash
-cd delivery-kanban-poc/frontend
+cd apps/delivery-kanban/frontend
 cp .env.example .env
 npm install
 npm run dev
@@ -35,7 +35,7 @@ npm run dev
 build:
 
 ```bash
-cd delivery-kanban-poc/frontend
+cd apps/delivery-kanban/frontend
 npm run build
 ```
 
@@ -44,7 +44,7 @@ npm run build
 backend:
 
 ```bash
-cd machine-process-visibility-poc
+cd apps/machine-process-visibility
 make setup-backend
 make dev-backend
 ```
@@ -52,7 +52,7 @@ make dev-backend
 frontend:
 
 ```bash
-cd machine-process-visibility-poc
+cd apps/machine-process-visibility
 make setup-frontend
 make dev-frontend
 ```
@@ -60,7 +60,7 @@ make dev-frontend
 validation:
 
 ```bash
-cd machine-process-visibility-poc
+cd apps/machine-process-visibility
 make check
 ```
 
@@ -91,8 +91,8 @@ make machine-check
 
 機械課PoCは `.github/workflows/machine-process-visibility.yml` で検証します。
 
-- backend dependencies: `make -C machine-process-visibility-poc setup-backend`
+- backend dependencies: `make -C apps/machine-process-visibility setup-backend`
 - frontend dependencies: `npm ci`
 - validation: `make machine-check`
 
-workflowは `machine-process-visibility-poc/`、root `Makefile`、関連開発ドキュメントが変わったときに実行されます。
+workflowは `apps/machine-process-visibility/`、root `Makefile`、関連開発ドキュメントが変わったときに実行されます。
