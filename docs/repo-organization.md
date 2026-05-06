@@ -44,7 +44,14 @@ README.md
 - 共通化できる運用手順があれば `docs/` に移す。
 - この段階でも、まだディレクトリ移動はしない。
 
-### Phase 3: ディレクトリ移動
+### Phase 3: 開発コマンドの一本化
+
+- 主対象アプリに `Makefile` を追加し、起動、テスト、build の入口を揃える。
+- リポジトリルートに委譲ターゲットを追加し、現在の主対象アプリへ迷わず到達できるようにする。
+- CIを追加する前に、ローカルで使う標準コマンドを固定する。
+- この段階でも、まだディレクトリ移動はしない。
+
+### Phase 4: ディレクトリ移動
 
 - `delivery-kanban-poc/` を `apps/delivery-kanban/` へ移す。
 - `machine-process-visibility-poc/` を `apps/machine-process-visibility/` へ移す。

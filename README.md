@@ -22,6 +22,13 @@
 
 開発・検証コマンドの一覧は [docs/development.md](docs/development.md) を参照してください。
 
+機械課PoCの主要コマンドは、リポジトリルートからも実行できます。
+
+```bash
+make machine-install
+make machine-check
+```
+
 ## 納期確認カンバンPoC
 
 詳細は [delivery-kanban-poc/README.md](delivery-kanban-poc/README.md) を参照してください。
@@ -44,18 +51,15 @@ cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
 
 ```bash
 cd machine-process-visibility-poc
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r backend/requirements.txt
-python backend/main.py
+make install
+make dev-backend
 ```
 
 別ターミナル:
 
 ```bash
 cd machine-process-visibility-poc
-npm install
-npm run dev
+make dev-frontend
 ```
 
 起動後のURL:

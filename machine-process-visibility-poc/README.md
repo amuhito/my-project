@@ -23,17 +23,15 @@ Trello風ボードとカレンダーで、加工・研磨・追加工の進捗�
 backend:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r backend/requirements.txt
-python backend/main.py
+make setup-backend
+make dev-backend
 ```
 
 frontend:
 
 ```bash
-npm install
-npm run dev
+make setup-frontend
+make dev-frontend
 ```
 
 起動後のURL:
@@ -66,9 +64,7 @@ DBは `backend/machine_poc.sqlite3` に自動作成されます。
 ## 検証
 
 ```bash
-pytest backend/tests
-python -m compileall backend
-npm run build
+make check
 ```
 
 共通の開発手順はリポジトリルートの `docs/development.md` にもまとめています。

@@ -45,27 +45,30 @@ backend:
 
 ```bash
 cd machine-process-visibility-poc
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r backend/requirements.txt
-python backend/main.py
+make setup-backend
+make dev-backend
 ```
 
 frontend:
 
 ```bash
 cd machine-process-visibility-poc
-npm install
-npm run dev
+make setup-frontend
+make dev-frontend
 ```
 
 validation:
 
 ```bash
 cd machine-process-visibility-poc
-pytest backend/tests
-python -m compileall backend
-npm run build
+make check
+```
+
+リポジトリルートから実行する場合は、次の委譲ターゲットも使えます。
+
+```bash
+make machine-install
+make machine-check
 ```
 
 ## 生成物の扱い
