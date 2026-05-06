@@ -4,9 +4,11 @@ __pycache__/
 logs/
 output/
 *.pdf
-frontend/node_modules/
-frontend/dist/
+node_modules/
+dist/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+*.sqlite3
 backend/kanban.db
-delivery-kanban-poc/frontend/node_modules/
-delivery-kanban-poc/frontend/dist/
-delivery-kanban-poc/backend/kanban.db
+apps/delivery-kanban/backend/kanban.db
