@@ -18,7 +18,7 @@
 ## 1. Docker イメージを作る
 
 ```powershell
-cd C:\Users\A000594001\my-project\delivery-kanban-poc
+cd C:\Users\A000594001\my-project\apps\delivery-kanban
 docker build -t delivery-kanban-poc:latest .
 ```
 
@@ -63,7 +63,7 @@ aws lightsail push-container-image `
 
 ## 4. デプロイ定義を作る
 
-[deployment/aws/lightsail-containers.json](C:\Users\A000594001\my-project\delivery-kanban-poc\deployment\aws\lightsail-containers.json) の `IMAGE_NAME` を、push 結果のイメージ名に置き換えます。
+[deployment/aws/lightsail-containers.json](C:\Users\A000594001\my-project\apps\delivery-kanban\deployment\aws\lightsail-containers.json) の `IMAGE_NAME` を、push 結果のイメージ名に置き換えます。
 
 必要なら `KANBAN_CORS_ORIGINS` も実 URL に変えてください。
 

@@ -6,15 +6,15 @@
 
 | ディレクトリ | 役割 | 主な利用者 |
 | --- | --- | --- |
-| `delivery-kanban-poc/` | 納期確認カンバンPoC本体。React frontend、FastAPI backend、Docker構成を含みます。 | 納期確認カンバンの開発・検証 |
-| `delivery-kanban-poc-local/` | `delivery-kanban-poc/` をWindowsローカルPCで起動するための補助スクリプト群です。 | ローカル利用者 |
-| `machine-process-visibility-poc/` | 機械課 工程見える化PoC。工程ボード、作業実績、日報、管理機能を含みます。 | 機械課PoCの開発・検証 |
+| `apps/delivery-kanban/` | 納期確認カンバンPoC本体。React frontend、FastAPI backend、Docker構成を含みます。 | 納期確認カンバンの開発・検証 |
+| `scripts/delivery-kanban-local/` | `apps/delivery-kanban/` をWindowsローカルPCで起動するための補助スクリプト群です。 | ローカル利用者 |
+| `apps/machine-process-visibility/` | 機械課 工程見える化PoC。工程ボード、作業実績、日報、管理機能を含みます。 | 機械課PoCの開発・検証 |
 | `tools/misumi_types/` | 既存のPython / PowerShellスクリプト群です。 | 既存スクリプト利用者 |
 
 ## 現在の構成方針
 
-- `delivery-kanban-poc/` と `machine-process-visibility-poc/` は別アプリとして扱います。
-- `delivery-kanban-poc-local/` はアプリ本体ではなく、`delivery-kanban-poc/` 専用の起動補助です。
+- `apps/delivery-kanban/` と `apps/machine-process-visibility/` は別アプリとして扱います。
+- `scripts/delivery-kanban-local/` はアプリ本体ではなく、`apps/delivery-kanban/` 専用の起動補助です。
 - 新しいPoCやアプリを追加するときは、既存アプリの中へ混ぜず、独立したディレクトリとして追加します。
 - ディレクトリ再編は機能追加PRと分けて、段階的に実施します。
 
@@ -31,12 +31,12 @@ make machine-check
 
 ## 納期確認カンバンPoC
 
-詳細は [delivery-kanban-poc/README.md](delivery-kanban-poc/README.md) を参照してください。
+詳細は [apps/delivery-kanban/README.md](apps/delivery-kanban/README.md) を参照してください。
 
 ローカルPCで簡単に起動する場合は、補助スクリプトを使います。
 
 ```powershell
-cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
+cd C:\Users\A000594001\my-project\scripts\delivery-kanban-local
 .\start-local.cmd
 ```
 
@@ -47,10 +47,10 @@ cd C:\Users\A000594001\my-project\delivery-kanban-poc-local
 
 ## 機械課 工程見える化PoC
 
-詳細は [machine-process-visibility-poc/README.md](machine-process-visibility-poc/README.md) を参照してください。
+詳細は [apps/machine-process-visibility/README.md](apps/machine-process-visibility/README.md) を参照してください。
 
 ```bash
-cd machine-process-visibility-poc
+cd apps/machine-process-visibility
 make install
 make dev-backend
 ```
@@ -58,7 +58,7 @@ make dev-backend
 別ターミナル:
 
 ```bash
-cd machine-process-visibility-poc
+cd apps/machine-process-visibility
 make dev-frontend
 ```
 

@@ -14,7 +14,7 @@
 ## プロジェクト構成（主要ディレクトリ）
 
 ```text
-delivery-kanban-poc/
+apps/delivery-kanban/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py            # FastAPI エントリポイント
@@ -42,7 +42,7 @@ delivery-kanban-poc/
 ### 1. backend 起動（ターミナル1）
 
 ```bash
-cd /path/to/delivery-kanban-poc/backend
+cd /path/to/apps/delivery-kanban/backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
@@ -52,7 +52,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ### 2. frontend 起動（ターミナル2）
 
 ```bash
-cd /path/to/delivery-kanban-poc/frontend
+cd /path/to/apps/delivery-kanban/frontend
 cp .env.example .env
 npm install
 npm run dev
@@ -90,7 +90,7 @@ curl -X POST "http://127.0.0.1:8000/api/auth/users" \
 ## Docker 起動
 
 ```bash
-cd /path/to/delivery-kanban-poc
+cd /path/to/apps/delivery-kanban
 docker compose up --build
 ```
 
