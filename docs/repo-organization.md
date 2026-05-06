@@ -53,6 +53,9 @@ README.md
 
 ### Phase 4: ディレクトリ移動
 
+- CIが安定してから、ディレクトリ移動だけのPRとして実施する。
+- 移動後も `make machine-check` 相当の検証入口を維持する。
+
 - `delivery-kanban-poc/` を `apps/delivery-kanban/` へ移す。
 - `machine-process-visibility-poc/` を `apps/machine-process-visibility/` へ移す。
 - `delivery-kanban-poc-local/` を `scripts/delivery-kanban-local/` へ移す。

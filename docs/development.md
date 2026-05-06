@@ -86,3 +86,13 @@ make machine-check
 - 機能追加とディレクトリ移動は分けてください。
 - 別PoCのファイルを同じPRで触る場合は、PR本文に理由を書いてください。
 - 変更対象のPoCで、少なくともbuildまたはテストを1つ実行してください。
+
+## CI
+
+機械課PoCは `.github/workflows/machine-process-visibility.yml` で検証します。
+
+- backend dependencies: `make -C machine-process-visibility-poc setup-backend`
+- frontend dependencies: `npm ci`
+- validation: `make machine-check`
+
+workflowは `machine-process-visibility-poc/`、root `Makefile`、関連開発ドキュメントが変わったときに実行されます。
