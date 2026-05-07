@@ -63,8 +63,8 @@ def test_get_card_detail_includes_comments_and_work_logs(initialized_db: Path) -
 
     detail = get_card_detail(card["id"])
 
-    assert detail["comments"][0]["body"] == "確認済み"
-    assert detail["work_logs"][0]["comment_body"] == "確認済み"
+    assert any(comment["body"] == "確認済み" for comment in detail["comments"])
+    assert any(log["comment_body"] == "確認済み" for log in detail["work_logs"])
 
 
 def test_get_card_detail_raises_404_for_unknown_card(initialized_db: Path) -> None:

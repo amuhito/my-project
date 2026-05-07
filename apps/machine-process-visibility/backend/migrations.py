@@ -232,6 +232,10 @@ def init_db() -> None:
                 work_date TEXT NOT NULL,
                 completed_qty_delta INTEGER NOT NULL,
                 work_hours REAL NOT NULL CHECK(work_hours >= 0),
+                start_time TEXT,
+                end_time TEXT,
+                duration_minutes INTEGER NOT NULL DEFAULT 0 CHECK(duration_minutes >= 0),
+                estimated_minutes INTEGER NOT NULL DEFAULT 0 CHECK(estimated_minutes >= 0),
                 comment_id INTEGER REFERENCES comments(id),
                 created_at TEXT NOT NULL
             );
@@ -271,6 +275,10 @@ def init_db() -> None:
         ensure_column(conn, "work_logs", "process_id", "INTEGER REFERENCES processes(id)")
         ensure_column(conn, "work_logs", "registered_by_user_id", "INTEGER REFERENCES users(id)")
         ensure_column(conn, "work_logs", "work_type", "TEXT NOT NULL DEFAULT '作業'")
+        ensure_column(conn, "work_logs", "start_time", "TEXT")
+        ensure_column(conn, "work_logs", "end_time", "TEXT")
+        ensure_column(conn, "work_logs", "duration_minutes", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "work_logs", "estimated_minutes", "INTEGER NOT NULL DEFAULT 0")
         allow_negative_work_log_delta(conn)
         sync_comment_classification_constraint(conn)
         conn.execute(
@@ -386,5 +394,66 @@ def init_db() -> None:
                 """,
                 users,
             )
+
+        conn.execute(
+            """
+            UPDATE work_logs
+            SET duration_minutes = CAST(ROUND(work_hours * 60) AS INTEGER)
+            WHERE duration_minutes = 0 AND work_hours > 0
+            """
+        )
+
+        if not table_has_rows(conn, "work_logs"):
+            seed_logs = [
+                ("SH-208500L2", "三谷", "内面研磨", "作業", today.isoformat(), 6, "08:30", "10:15", 120, ""),
+                ("SH-208500L2", "三谷", "内面研磨", "作業", today.isoformat(), 5, "10:30", "12:00", 90, ""),
+                ("SH-208500L2", "山本", "内面研磨", "手戻り", today.isoformat(), -1, "13:00", "13:45", 30, "寸法再確認"),
+                ("HB-110470", "山本", "刃物研磨", "作業", (today - timedelta(days=3)).isoformat(), 3, "09:00", "10:10", 80, ""),
+                ("RW-001", "佐藤", "機械加工", "作業", (today - timedelta(days=8)).isoformat(), 1, "14:00", "15:20", 75, ""),
+                ("RW-001", "鈴木", "機械加工", "作業", (today - timedelta(days=15)).isoformat(), 1, "16:00", "17:05", 60, ""),
+            ]
+            for drawing_no, assignee_name, process_name, work_type, work_date, qty_delta, start_time, end_time, estimated, comment in seed_logs:
+                card = conn.execute("SELECT id FROM cards WHERE drawing_no = ?", (drawing_no,)).fetchone()
+                assignee = conn.execute("SELECT id FROM assignees WHERE name = ?", (assignee_name,)).fetchone()
+                process = conn.execute("SELECT id FROM processes WHERE name = ?", (process_name,)).fetchone()
+                user = conn.execute("SELECT id FROM users WHERE assignee_id = ?", (assignee["id"],)).fetchone() if assignee else None
+                if not card or not assignee or not process:
+                    continue
+                start_hour, start_minute = [int(part) for part in start_time.split(":")]
+                end_hour, end_minute = [int(part) for part in end_time.split(":")]
+                duration_minutes = (end_hour * 60 + end_minute) - (start_hour * 60 + start_minute)
+                comment_id = None
+                if comment:
+                    cur = conn.execute(
+                        "INSERT INTO comments(card_id, comment_type, body, user_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (card["id"], work_type, comment, assignee["id"], now_iso()),
+                    )
+                    comment_id = cur.lastrowid
+                conn.execute(
+                    """
+                    INSERT INTO work_logs(
+                        card_id, assignee_id, registered_by_user_id, process_id, work_type, work_date,
+                        completed_qty_delta, work_hours, start_time, end_time, duration_minutes, estimated_minutes,
+                        comment_id, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        card["id"],
+                        assignee["id"],
+                        user["id"] if user else None,
+                        process["id"],
+                        work_type,
+                        work_date,
+                        qty_delta,
+                        round(duration_minutes / 60, 2),
+                        start_time,
+                        end_time,
+                        duration_minutes,
+                        estimated,
+                        comment_id,
+                        now_iso(),
+                    ),
+                )
 
         normalize_existing_poc_data(conn)

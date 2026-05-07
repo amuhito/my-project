@@ -1,24 +1,30 @@
 import { useState } from "react";
 import type { Card } from "../types";
 import { isRework } from "../utils/card";
-import { localDateString, monthKey, pad2 } from "../utils/date";
+import { addDays, localDateString, mondayOfWeek, monthKey, pad2 } from "../utils/date";
 
 export function CalendarView({ cards, onOpen }: { cards: Card[]; onOpen: (id: number) => void }) {
   const [displayMonth, setDisplayMonth] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
   });
+  const [displayWeek, setDisplayWeek] = useState(() => mondayOfWeek(new Date()));
+  const [mode, setMode] = useState<"month" | "week">("month");
   const todayKey = localDateString();
   const currentMonthKey = monthKey(displayMonth);
-  const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+  const weekdays = mode === "month" ? ["日", "月", "火", "水", "木", "金", "土"] : ["月", "火", "水", "木", "金", "土", "日"];
   const entriesByDay = new Map<string, { card: Card; kind: "予定" | "納期" }[]>();
+  const weekDays = Array.from({ length: 7 }, (_, index) => localDateString(addDays(displayWeek, index)));
+  const visibleDaySet = new Set(mode === "month" ? [] : weekDays);
 
   cards.forEach((card) => {
     [
       { day: card.planned_work_date, kind: "予定" as const },
       { day: card.due_date, kind: "納期" as const },
     ].forEach(({ day, kind }) => {
-      if (!day || !day.startsWith(currentMonthKey)) return;
+      if (!day) return;
+      if (mode === "month" && !day.startsWith(currentMonthKey)) return;
+      if (mode === "week" && !visibleDaySet.has(day)) return;
       entriesByDay.set(day, [...(entriesByDay.get(day) ?? []), { card, kind }]);
     });
   });
@@ -37,23 +43,41 @@ export function CalendarView({ cards, onOpen }: { cards: Card[]; onOpen: (id: nu
     setDisplayMonth((current) => new Date(current.getFullYear(), current.getMonth() + delta, 1));
   }
 
+  function moveWeek(delta: number) {
+    setDisplayWeek((current) => addDays(current, delta * 7));
+  }
+
+  const visibleCells = mode === "month" ? dayCells : weekDays;
+
   return (
     <section className="panel">
       <div className="calendarToolbar">
-        <button onClick={() => moveMonth(-1)}>前月</button>
-        <h2>{displayMonth.getFullYear()}年 {displayMonth.getMonth() + 1}月</h2>
-        <button onClick={() => moveMonth(1)}>翌月</button>
-        <button onClick={() => setDisplayMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>今月</button>
+        <button onClick={() => mode === "month" ? moveMonth(-1) : moveWeek(-1)}>{mode === "month" ? "前月" : "前週"}</button>
+        <h2>
+          {mode === "month"
+            ? `${displayMonth.getFullYear()}年 ${displayMonth.getMonth() + 1}月`
+            : `${weekDays[0]}〜${weekDays[6]}`}
+        </h2>
+        <button onClick={() => mode === "month" ? moveMonth(1) : moveWeek(1)}>{mode === "month" ? "翌月" : "翌週"}</button>
+        <div className="segmented">
+          <button className={mode === "month" ? "active" : ""} onClick={() => setMode("month")}>月</button>
+          <button className={mode === "week" ? "active" : ""} onClick={() => setMode("week")}>週</button>
+        </div>
+        <button onClick={() => {
+          const today = new Date();
+          setDisplayMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+          setDisplayWeek(mondayOfWeek(today));
+        }}>今日</button>
       </div>
-      <div className="monthCalendar">
+      <div className={mode === "month" ? "monthCalendar" : "monthCalendar weekCalendar"}>
         {weekdays.map((weekday) => (
           <div className="weekday" key={weekday}>{weekday}</div>
         ))}
-        {dayCells.map((day, index) => (
+        {visibleCells.map((day, index) => (
           <div className={`dayCell ${day ? "" : "empty"} ${day === todayKey ? "today" : ""}`} key={day ?? `blank-${index}`}>
             {day && (
               <>
-                <div className="dayNumber">{Number(day.slice(-2))}</div>
+                <div className="dayNumber">{mode === "week" ? day.slice(5) : Number(day.slice(-2))}</div>
                 <div className="calendarItems">
                   {(entriesByDay.get(day) ?? []).slice(0, 4).map(({ card, kind }) => {
                     const late = kind === "納期" && day < todayKey && card.status !== "完了";
@@ -72,7 +96,7 @@ export function CalendarView({ cards, onOpen }: { cards: Card[]; onOpen: (id: nu
         ))}
       </div>
       <div className="calendarEmptyNote">
-        {dayCells.every((day) => !day || !entriesByDay.get(day)?.length) && "この月の予定・納期はありません"}
+        {visibleCells.every((day) => !day || !entriesByDay.get(day)?.length) && `この${mode === "month" ? "月" : "週"}の予定・納期はありません`}
       </div>
     </section>
   );

@@ -22,7 +22,9 @@ def test_register_work_result_completes_card_and_writes_log_and_audit(initialize
     user = user_by_username("yamamoto")
     payload = WorkResultPayload(
         completed_qty_delta=8,
-        work_hours=2.5,
+        start_time="08:00",
+        end_time="10:30",
+        estimated_minutes=150,
         assignee_id=user["assignee_id"],
         work_date="2026-05-05",
         comment_type="作業",
@@ -35,6 +37,8 @@ def test_register_work_result_completes_card_and_writes_log_and_audit(initialize
     assert result["status"] == "完了"
     assert result["work_logs"][0]["completed_qty_delta"] == 8
     assert result["work_logs"][0]["work_hours"] == 2.5
+    assert result["work_logs"][0]["duration_minutes"] == 150
+    assert result["work_logs"][0]["estimated_minutes"] == 150
 
     audit = fetch_one("SELECT * FROM card_audit_logs WHERE card_id = ?", (card["id"],))
     assert audit["action"] == "completed_qty_from_work_log"
@@ -51,7 +55,8 @@ def test_rework_requires_negative_delta_and_comment(initialized_db: Path) -> Non
             card["id"],
             WorkResultPayload(
                 completed_qty_delta=-1,
-                work_hours=0,
+                start_time="13:00",
+                end_time="13:30",
                 assignee_id=user["assignee_id"],
                 work_date="2026-05-05",
                 comment_type="手戻り",
@@ -65,7 +70,9 @@ def test_rework_requires_negative_delta_and_comment(initialized_db: Path) -> Non
         card["id"],
         WorkResultPayload(
             completed_qty_delta=-1,
-            work_hours=0,
+            start_time="13:00",
+            end_time="13:30",
+            estimated_minutes=30,
             assignee_id=user["assignee_id"],
             work_date="2026-05-05",
             comment_type="手戻り",
@@ -90,7 +97,8 @@ def test_operator_cannot_register_work_for_other_assignee(initialized_db: Path) 
             card["id"],
             WorkResultPayload(
                 completed_qty_delta=1,
-                work_hours=1,
+                start_time="09:00",
+                end_time="10:00",
                 assignee_id=other_assignee["id"],
                 work_date="2026-05-05",
                 comment_type="作業",
@@ -111,7 +119,52 @@ def test_completed_quantity_cannot_exceed_total(initialized_db: Path) -> None:
             card["id"],
             WorkResultPayload(
                 completed_qty_delta=9,
-                work_hours=1,
+                start_time="09:00",
+                end_time="10:00",
+                assignee_id=user["assignee_id"],
+                work_date="2026-05-05",
+                comment_type="作業",
+                comment="",
+            ),
+            user,
+        )
+
+    assert exc_info.value.status_code == 400
+
+
+def test_work_time_must_be_within_business_hours(initialized_db: Path) -> None:
+    card = card_by_drawing_no("HB-110470")
+    user = user_by_username("yamamoto")
+
+    with pytest.raises(HTTPException) as exc_info:
+        register_work_result_for_card(
+            card["id"],
+            WorkResultPayload(
+                completed_qty_delta=1,
+                start_time="07:50",
+                end_time="08:30",
+                assignee_id=user["assignee_id"],
+                work_date="2026-05-05",
+                comment_type="作業",
+                comment="",
+            ),
+            user,
+        )
+
+    assert exc_info.value.status_code == 400
+
+
+def test_end_time_must_be_after_start_time(initialized_db: Path) -> None:
+    card = card_by_drawing_no("HB-110470")
+    user = user_by_username("yamamoto")
+
+    with pytest.raises(HTTPException) as exc_info:
+        register_work_result_for_card(
+            card["id"],
+            WorkResultPayload(
+                completed_qty_delta=1,
+                start_time="10:00",
+                end_time="09:59",
                 assignee_id=user["assignee_id"],
                 work_date="2026-05-05",
                 comment_type="作業",

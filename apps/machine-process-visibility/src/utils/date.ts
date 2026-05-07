@@ -10,6 +10,24 @@ export function monthKey(date: Date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}`;
 }
 
+export function addDays(date: Date, days: number) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+export function mondayOfWeek(date: Date) {
+  const day = date.getDay();
+  const delta = day === 0 ? -6 : 1 - day;
+  return addDays(date, delta);
+}
+
+export function minutesLabel(minutes: number) {
+  const sign = minutes < 0 ? "-" : "";
+  const value = Math.abs(minutes);
+  const hours = Math.floor(value / 60);
+  const rest = value % 60;
+  return `${sign}${hours}h${pad2(rest)}m`;
+}
+
 export function normalizeDateInput(raw: string) {
   const value = raw.trim();
   if (!value) return "";
