@@ -38,6 +38,10 @@ export type WorkLog = {
   work_date: string;
   completed_qty_delta: number;
   work_hours: number;
+  start_time: string | null;
+  end_time: string | null;
+  duration_minutes: number;
+  estimated_minutes: number;
   assignee_name?: string;
   comment_type?: string;
   comment_body?: string;
@@ -62,7 +66,47 @@ export type ReportRow = {
 };
 
 export type Meta = { processes: Process[]; assignees: Assignee[]; tags: Tag[]; comment_types: string[] };
-export type View = "board" | "process" | "assignee" | "calendar" | "report" | "admin";
+export type DashboardPeriod = "month" | "week";
+
+export type DashboardLog = WorkLog & {
+  work_type: string;
+  assignee_id: number;
+  process_name: string;
+  card_id: number;
+  order_no: string;
+  item_type: string;
+  drawing_no: string;
+  item_name: string;
+};
+
+export type DashboardProcessSummary = {
+  name: string;
+  work_count: number;
+  actual_minutes: number;
+  estimated_minutes: number;
+};
+
+export type DashboardAssigneeSummary = {
+  assignee: Assignee;
+  work_count: number;
+  completed_qty: number;
+  rework_count: number;
+  actual_minutes: number;
+  estimated_minutes: number;
+  variance_minutes: number;
+  efficiency_rate: number | null;
+  processes: DashboardProcessSummary[];
+  logs: DashboardLog[];
+};
+
+export type DashboardResponse = {
+  period: DashboardPeriod;
+  label: string;
+  start_date: string;
+  end_date: string;
+  summaries: DashboardAssigneeSummary[];
+};
+export type View = "board" | "process" | "assignee" | "calendar" | "dashboard" | "report" | "admin";
 export type ProcessSortMode = "due" | "assignee";
 
 export type AuthUser = {
@@ -94,6 +138,9 @@ export type WorkFormState = {
   work_date: string;
   completed_qty_delta: number;
   work_hours: number;
+  start_time: string;
+  end_time: string;
+  estimated_minutes: number;
   assignee_id: number | null;
   comment_type: string;
   comment: string;

@@ -37,6 +37,7 @@ def test_init_db_normalizes_existing_invalid_poc_card_data(initialized_db: Path)
 def test_init_db_removes_invalid_work_logs(initialized_db: Path) -> None:
     card = fetch_one("SELECT * FROM cards WHERE drawing_no = ?", ("SH-208500L2",))
     assignee = fetch_one("SELECT * FROM assignees WHERE name = ?", ("三谷",))
+    before_valid_count = len(fetch_all("SELECT * FROM work_logs WHERE card_id = ?", (card["id"],)))
     with db() as conn:
         conn.execute(
             """
@@ -58,7 +59,7 @@ def test_init_db_removes_invalid_work_logs(initialized_db: Path) -> None:
                 "2026-05-05T10:00:00",
             ),
         )
-
     init_db()
 
-    assert fetch_all("SELECT * FROM work_logs WHERE card_id = ?", (card["id"],)) == []
+    after_count = len(fetch_all("SELECT * FROM work_logs WHERE card_id = ?", (card["id"],)))
+    assert after_count == before_valid_count

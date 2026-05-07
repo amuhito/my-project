@@ -7,10 +7,10 @@ import { AssigneeView } from "./views/AssigneeView";
 import { AdminView } from "./views/AdminView";
 import { BoardView } from "./views/BoardView";
 import { CalendarView } from "./views/CalendarView";
+import { DashboardView } from "./views/DashboardView";
 import { LoginView } from "./views/LoginView";
 import { PasswordChangeView } from "./views/PasswordChangeView";
 import { ProcessView } from "./views/ProcessView";
-import { ReportView } from "./views/ReportView";
 
 export function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -154,7 +154,7 @@ export function App() {
             ["process", "島別"],
             ["assignee", "担当者別"],
             ["calendar", "カレンダー"],
-            ["report", "日報"],
+            ...(isAdmin ? [["dashboard", "ダッシュボード"]] : []),
             ...(isAdmin ? [["admin", "管理"]] : []),
           ].map(([key, label]) => (
             <button key={key} className={view === key ? "active" : ""} onClick={() => setView(key as View)}>
@@ -196,7 +196,7 @@ export function App() {
         )}
         {view === "assignee" && <AssigneeView cards={visibleCards} assignees={meta.assignees} onOpen={openCard} />}
         {view === "calendar" && <CalendarView cards={visibleCards} onOpen={openCard} />}
-        {view === "report" && <ReportView meta={meta} />}
+        {view === "dashboard" && isAdmin && <DashboardView />}
         {view === "admin" && isAdmin && <AdminView meta={meta} onMetaChanged={load} />}
       </main>
 

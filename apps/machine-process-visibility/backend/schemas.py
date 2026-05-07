@@ -32,7 +32,10 @@ class CommentPayload(BaseModel):
 
 class WorkResultPayload(BaseModel):
     completed_qty_delta: int
-    work_hours: float = Field(ge=0)
+    work_hours: float = Field(ge=0, default=0)
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    estimated_minutes: int = Field(ge=0, default=0)
     assignee_id: Optional[int] = None
     work_date: Optional[str] = None
     comment_type: str = "作業"

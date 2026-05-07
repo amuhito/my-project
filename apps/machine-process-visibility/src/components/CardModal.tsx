@@ -3,7 +3,7 @@ import { request } from "../api";
 import { DateField } from "./DateField";
 import type { AuthUser, Card, CardDraft, Meta, WorkFormState } from "../types";
 import { labelStyle, toPayload } from "../utils/card";
-import { localDateString } from "../utils/date";
+import { localDateString, minutesLabel } from "../utils/date";
 
 export function CardModal({
   card,
@@ -26,12 +26,15 @@ export function CardModal({
     work_date: localDateString(),
     completed_qty_delta: 0,
     work_hours: 0,
+    start_time: "08:00",
+    end_time: "09:00",
+    estimated_minutes: 60,
     assignee_id: currentUser.assignee_id ?? card.assignee_id ?? meta.assignees[0]?.id ?? null,
     comment_type: "作業",
     comment: "",
   });
   const [workQtyText, setWorkQtyText] = useState("0");
-  const [workHoursText, setWorkHoursText] = useState("0");
+  const [estimatedMinutesText, setEstimatedMinutesText] = useState("60");
   const [error, setError] = useState("");
 
   async function save(event: FormEvent) {
@@ -59,19 +62,23 @@ export function CardModal({
         body: JSON.stringify({
           ...work,
           completed_qty_delta: Number(workQtyText || 0),
-          work_hours: Number(workHoursText || 0),
+          work_hours: actualWorkMinutes / 60,
+          estimated_minutes: Number(estimatedMinutesText || 0),
         }),
       });
       setWork({
         work_date: localDateString(),
         completed_qty_delta: 0,
         work_hours: 0,
+        start_time: "08:00",
+        end_time: "09:00",
+        estimated_minutes: 60,
         assignee_id: currentUser.assignee_id ?? draft.assignee_id ?? meta.assignees[0]?.id ?? null,
         comment_type: "作業",
         comment: "",
       });
       setWorkQtyText("0");
-      setWorkHoursText("0");
+      setEstimatedMinutesText("60");
       onSaved(cardId);
     } catch (err) {
       setError((err as Error).message);
@@ -86,24 +93,44 @@ export function CardModal({
     setWork({ ...work, comment_type: value });
     if (value === "開始" || value === "コメント") {
       setWorkQtyText("0");
-      setWorkHoursText("0");
+      setEstimatedMinutesText("0");
+    } else {
+      setEstimatedMinutesText((current) => current === "0" ? "60" : current);
     }
   }
 
   const adminOnlyDisabled = !isAdmin;
   const workerSelectDisabled = !isAdmin;
   const zeroWorkInputs = work.comment_type === "開始" || work.comment_type === "コメント";
+  const recordsWorkTime = work.comment_type === "作業" || work.comment_type === "手戻り";
   const workQty = Number(workQtyText || 0);
-  const workHours = Number(workHoursText || 0);
+  const estimatedMinutes = Number(estimatedMinutesText || 0);
   const workComment = work.comment.trim();
+  const startMinutes = /^([01]\d|2[0-3]):[0-5]\d$/.test(work.start_time) ? Number(work.start_time.slice(0, 2)) * 60 + Number(work.start_time.slice(3)) : NaN;
+  const endMinutes = /^([01]\d|2[0-3]):[0-5]\d$/.test(work.end_time) ? Number(work.end_time.slice(0, 2)) * 60 + Number(work.end_time.slice(3)) : NaN;
+  const actualWorkMinutes = recordsWorkTime && Number.isFinite(startMinutes) && Number.isFinite(endMinutes) ? endMinutes - startMinutes : 0;
+  const timeValidationMessage = recordsWorkTime
+    ? !work.start_time || !work.end_time
+      ? "開始時刻と終了時刻を入力してください"
+      : !Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)
+        ? "時刻は HH:MM 形式で入力してください"
+        : startMinutes < 8 * 60 || endMinutes > 22 * 60
+          ? "作業時刻は08:00〜22:00の範囲で入力してください"
+          : actualWorkMinutes <= 0
+            ? "終了時刻は開始時刻より後にしてください"
+            : ""
+    : "";
   const workValidationMessage =
-    work.comment_type === "作業" && (workQty <= 0 || workHours <= 0)
-      ? "作業は加工数量と作業時間を入力してください"
+    timeValidationMessage ||
+    (work.comment_type === "作業" && workQty <= 0
+      ? "作業は加工数量を入力してください"
       : work.comment_type === "手戻り" && (workQty >= 0 || !workComment)
         ? "手戻りはマイナス数量と理由コメントを入力してください"
         : work.comment_type === "コメント" && !workComment
           ? "コメントを入力してください"
-          : "";
+          : recordsWorkTime && estimatedMinutes < 0
+            ? "見積時間は0分以上で入力してください"
+            : "");
   const workSubmitDisabled = Boolean(workValidationMessage);
 
   return (
@@ -146,15 +173,39 @@ export function CardModal({
               />
             </label>
             <label>
-              作業時間(h)
+              開始時刻
+              <input
+                type="time"
+                min="08:00"
+                max="22:00"
+                step="60"
+                value={work.start_time}
+                disabled={zeroWorkInputs}
+                onChange={(e) => setWork({ ...work, start_time: e.target.value })}
+              />
+            </label>
+            <label>
+              終了時刻
+              <input
+                type="time"
+                min="08:00"
+                max="22:00"
+                step="60"
+                value={work.end_time}
+                disabled={zeroWorkInputs}
+                onChange={(e) => setWork({ ...work, end_time: e.target.value })}
+              />
+            </label>
+            <label>
+              見積時間(分)
               <input
                 type="text"
-                inputMode="decimal"
-                placeholder="例: 1.5"
-                value={workHoursText}
+                inputMode="numeric"
+                placeholder="例: 60"
+                value={estimatedMinutesText}
                 disabled={zeroWorkInputs}
                 onFocus={(event) => event.currentTarget.select()}
-                onChange={(e) => setWorkHoursText(e.target.value)}
+                onChange={(e) => setEstimatedMinutesText(e.target.value.replace(/\D/g, ""))}
               />
             </label>
             <label>
@@ -167,6 +218,7 @@ export function CardModal({
               コメント
               <input placeholder="手戻り・コメント時は必須" value={work.comment} onChange={(e) => setWork({ ...work, comment: e.target.value })} />
             </label>
+            {recordsWorkTime && !timeValidationMessage && <p className="formHint">実作業時間: {minutesLabel(actualWorkMinutes)} / 見積差分: {minutesLabel(estimatedMinutes - actualWorkMinutes)}</p>}
             {workValidationMessage && <p className="formHint">{workValidationMessage}</p>}
             <button type="submit" disabled={workSubmitDisabled}>登録</button>
           </form>
@@ -231,7 +283,7 @@ export function CardModal({
               <h3>作業ログ</h3>
               <div className="tableScroll">
                 <table>
-                  <thead><tr><th>日付</th><th>担当</th><th>作業分類</th><th>加工数量</th><th>時間(h)</th><th>コメント</th></tr></thead>
+                  <thead><tr><th>日付</th><th>担当</th><th>作業分類</th><th>加工数量</th><th>開始</th><th>終了</th><th>実績</th><th>見積</th><th>コメント</th></tr></thead>
                   <tbody>
                     {(card.work_logs ?? []).map((log) => (
                       <tr key={log.id}>
@@ -239,7 +291,10 @@ export function CardModal({
                         <td>{log.assignee_name ?? "-"}</td>
                         <td>{log.comment_type ?? "-"}</td>
                         <td>{log.completed_qty_delta}</td>
-                        <td>{log.work_hours}</td>
+                        <td>{log.start_time ?? "-"}</td>
+                        <td>{log.end_time ?? "-"}</td>
+                        <td>{minutesLabel(log.duration_minutes ?? Math.round((log.work_hours ?? 0) * 60))}</td>
+                        <td>{minutesLabel(log.estimated_minutes ?? 0)}</td>
                         <td>{log.comment_body ?? ""}</td>
                       </tr>
                     ))}
